@@ -156,25 +156,100 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    private var isRecalculatingOffRoute = false
+
     private fun checkNavigationProgress(currentLoc: LocationPoint) {
         val state = _uiState.value
         if (!state.isNavigating || state.activeRoute == null) return
-        
-        val steps = state.activeRoute.steps
+
+        val route = state.activeRoute
+        val steps = route.steps
         val currentIndex = state.currentRouteStepIndex
-        
-        if (currentIndex < steps.size - 1) {
-            val nextManeuverLoc = steps[currentIndex].maneuverLocation ?: return
-            
+
+        // 1. Check distance to current route geometry (Off-Route Detection & Trailing Polyline Trimming)
+        if (route.geometryPoints.isNotEmpty()) {
+            val (minDist, closestIdx) = minDistanceAndIndex(currentLoc, route.geometryPoints)
+            val offRouteThreshold = if (state.travelMode == TravelMode.FOOT) 35f else 50f
+
+            if (minDist > offRouteThreshold && !isRecalculatingOffRoute) {
+                // User has deviated from route -> Trigger automatic recalculation from current live position!
+                recalculateRouteOffRoute(currentLoc, route)
+                return
+            } else if (closestIdx > 0 && closestIdx < route.geometryPoints.size - 1) {
+                // Trim already driven/walked polyline points behind the user
+                val trimmedPoints = route.geometryPoints.subList(closestIdx, route.geometryPoints.size)
+                if (trimmedPoints.size >= 2 && trimmedPoints.size != route.geometryPoints.size) {
+                    _uiState.update {
+                        it.copy(
+                            activeRoute = route.copy(geometryPoints = trimmedPoints)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Scan ahead for maneuver step progression (handles step completion and rejoining route ahead)
+        if (steps.isNotEmpty() && currentIndex < steps.size) {
             val results = FloatArray(1)
-            Location.distanceBetween(
-                currentLoc.latitude, currentLoc.longitude,
-                nextManeuverLoc.latitude, nextManeuverLoc.longitude,
-                results
-            )
-            
-            if (results[0] < 30f) {
-                _uiState.update { it.copy(currentRouteStepIndex = currentIndex + 1) }
+            for (i in currentIndex until steps.size) {
+                val maneuverLoc = steps[i].maneuverLocation ?: continue
+                Location.distanceBetween(
+                    currentLoc.latitude, currentLoc.longitude,
+                    maneuverLoc.latitude, maneuverLoc.longitude,
+                    results
+                )
+                if (results[0] < 35f) {
+                    val nextIdx = (i + 1).coerceAtMost(steps.size - 1)
+                    if (nextIdx != currentIndex) {
+                        _uiState.update { it.copy(currentRouteStepIndex = nextIdx) }
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    private fun minDistanceAndIndex(loc: LocationPoint, points: List<LocationPoint>): Pair<Float, Int> {
+        var min = Float.MAX_VALUE
+        var minIdx = 0
+        val res = FloatArray(1)
+        for (i in points.indices) {
+            val p = points[i]
+            Location.distanceBetween(loc.latitude, loc.longitude, p.latitude, p.longitude, res)
+            if (res[0] < min) {
+                min = res[0]
+                minIdx = i
+            }
+        }
+        return Pair(min, minIdx)
+    }
+
+    private fun recalculateRouteOffRoute(currentLoc: LocationPoint, currentRoute: RouteResult) {
+        if (currentRoute.waypoints.isEmpty()) return
+        isRecalculatingOffRoute = true
+
+        viewModelScope.launch {
+            try {
+                // Keep the final destination, update starting point to current live GPS position
+                val updatedWaypoints = currentRoute.waypoints.toMutableList()
+                updatedWaypoints[0] = currentLoc.copy(name = "Mein Standort")
+
+                val mode = _uiState.value.travelMode
+                val footPref = userSettingsRepository.settings.value.footSpeed
+                val carPref = userSettingsRepository.settings.value.carSpeed
+
+                val result = routingRepository.getRoute(updatedWaypoints, mode, footPref, carPref)
+                result.onSuccess { newRoute ->
+                    _uiState.update {
+                        it.copy(
+                            activeRoute = newRoute,
+                            currentRouteStepIndex = 0
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                isRecalculatingOffRoute = false
             }
         }
     }

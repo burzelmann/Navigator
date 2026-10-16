@@ -41,7 +41,7 @@ class LocationRepository(context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun getLocationUpdates(intervalMs: Long = 5000L): Flow<LocationPoint> = callbackFlow {
+    fun getLocationUpdates(intervalMs: Long = 1000L): Flow<LocationPoint> = callbackFlow {
         // 1. Immediately emit last saved location from SharedPreferences (0ms delay)
         getLastSavedLocation()?.let { savedLoc ->
             trySend(savedLoc)

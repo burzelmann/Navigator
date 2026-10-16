@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.nagivator.data.remote.BRouterApi
 import com.example.nagivator.data.remote.GeocodingApi
 import com.example.nagivator.data.remote.RoutingApi
+import com.example.nagivator.domain.model.GermanManeuverTranslator
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.RouteStep
@@ -91,7 +92,11 @@ class RoutingRepository {
 
                     val steps = firstRoute.legs.flatMap { leg ->
                         leg.steps.map { step ->
-                            val maneuverName = step.name.ifBlank { step.maneuver?.type ?: "Dem Weg folgen" }
+                            val maneuverName = GermanManeuverTranslator.translate(
+                                type = step.maneuver?.type ?: "",
+                                modifier = step.maneuver?.modifier ?: "",
+                                rawName = step.name
+                            )
                             val maneuverLocCoords = step.maneuver?.location
                             val maneuverPoint = if (maneuverLocCoords != null && maneuverLocCoords.size >= 2) {
                                 LocationPoint(latitude = maneuverLocCoords[1], longitude = maneuverLocCoords[0])
