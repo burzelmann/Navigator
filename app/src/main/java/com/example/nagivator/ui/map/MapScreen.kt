@@ -31,7 +31,9 @@ import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.filled.Refresh
@@ -105,6 +107,19 @@ fun MapScreen(
     var poiTitleInput by remember { mutableStateOf("") }
     var poiDescInput by remember { mutableStateOf("") }
     var poiIconInput by remember { mutableStateOf("place") }
+
+    // Dialog state for naming/editing a POI / favorite
+    var editingPoiTarget by remember { mutableStateOf<PoiEntity?>(null) }
+    var editPoiTitleInput by remember { mutableStateOf("") }
+    var editPoiDescInput by remember { mutableStateOf("") }
+    var editPoiIconInput by remember { mutableStateOf("place") }
+
+    val openPoiNamingDialog: (PoiEntity) -> Unit = { poi ->
+        editingPoiTarget = poi
+        editPoiTitleInput = poi.title.ifBlank { poi.displayTitle }
+        editPoiDescInput = poi.description
+        editPoiIconInput = poi.iconName
+    }
 
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -419,7 +434,14 @@ fun MapScreen(
                     },
                     onStartNavigation = { viewModel.startNavigation() },
                     onStopNavigation = { viewModel.stopNavigation() },
-                    onToggleFavorite = { poi -> viewModel.toggleFavorite(poi) },
+                    onToggleFavorite = { poi ->
+                        if (!poi.isFavorite) {
+                            openPoiNamingDialog(poi)
+                        } else {
+                            viewModel.toggleFavorite(poi)
+                        }
+                    },
+                    onEditPoi = openPoiNamingDialog,
                     onDeletePoi = { poi -> viewModel.deletePoi(poi) },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -434,7 +456,14 @@ fun MapScreen(
                     },
                     onStartRoutePlanner = { viewModel.enterRoutePlanningMode() },
                     onClose = { viewModel.selectPoi(null) },
-                    onToggleFavorite = { poi -> viewModel.toggleFavorite(poi) },
+                    onToggleFavorite = { poi ->
+                        if (!poi.isFavorite) {
+                            openPoiNamingDialog(poi)
+                        } else {
+                            viewModel.toggleFavorite(poi)
+                        }
+                    },
+                    onEditPoi = openPoiNamingDialog,
                     onDeletePoi = { poi -> viewModel.deletePoi(poi) },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -446,7 +475,12 @@ fun MapScreen(
         // 5. New POI Candidate Dialog
         uiState.newPoiCandidate?.let { candidate ->
             AlertDialog(
-                onDismissRequest = { viewModel.saveCandidateAsPoi("", "") },
+                onDismissRequest = {
+                    viewModel.dismissNewPoiCandidate()
+                    poiTitleInput = ""
+                    poiDescInput = ""
+                    poiIconInput = "place"
+                },
                 icon = {
                     Icon(
                         Icons.Default.AddLocation,
@@ -504,9 +538,87 @@ fun MapScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        viewModel.saveCandidateAsPoi("", "", "place")
+                        viewModel.dismissNewPoiCandidate()
+                        poiTitleInput = ""
+                        poiDescInput = ""
                         poiIconInput = "place"
                     }) {
+                        Text("Abbrechen", style = MaterialTheme.typography.labelLarge)
+                    }
+                },
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        }
+
+        // 5b. Edit / Name Favorite Dialog
+        editingPoiTarget?.let { targetPoi ->
+            AlertDialog(
+                onDismissRequest = { editingPoiTarget = null },
+                icon = {
+                    Icon(
+                        imageVector = if (targetPoi.isFavorite) Icons.Default.Edit else Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                title = {
+                    Text(
+                        text = if (targetPoi.isFavorite) "Favorit bearbeiten" else "Favorit speichern & benennen",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = if (targetPoi.isFavorite)
+                                "Passen Sie den Namen, die Notiz oder das Symbol des Favoriten an:"
+                            else
+                                "Geben Sie diesem Favoriten einen Namen und wählen Sie optional ein Symbol:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = editPoiTitleInput,
+                            onValueChange = { editPoiTitleInput = it },
+                            label = { Text("Name des Favoriten") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = editPoiDescInput,
+                            onValueChange = { editPoiDescInput = it },
+                            label = { Text("Notiz / Beschreibung (optional)") },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        IconPicker(
+                            selectedIconKey = editPoiIconInput,
+                            onIconSelected = { editPoiIconInput = it }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.savePoiAsFavorite(
+                                poi = targetPoi,
+                                customTitle = editPoiTitleInput.trim(),
+                                description = editPoiDescInput.trim(),
+                                iconName = editPoiIconInput
+                            )
+                            editingPoiTarget = null
+                        }
+                    ) {
+                        Text("Speichern", style = MaterialTheme.typography.labelLarge)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingPoiTarget = null }) {
                         Text("Abbrechen", style = MaterialTheme.typography.labelLarge)
                     }
                 },

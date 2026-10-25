@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.TurnLeft
 import androidx.compose.material.icons.filled.TurnRight
@@ -60,6 +61,7 @@ fun PoiDetailsCard(
     onStartRoutePlanner: () -> Unit,
     onClose: () -> Unit,
     onToggleFavorite: (PoiEntity) -> Unit,
+    onEditPoi: ((PoiEntity) -> Unit)? = null,
     onDeletePoi: ((PoiEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -112,6 +114,15 @@ fun PoiDetailsCard(
                 }
 
                 Row {
+                    if (onEditPoi != null) {
+                        IconButton(onClick = { onEditPoi(poi) }) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Ort bearbeiten",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     IconButton(onClick = { onToggleFavorite(poi) }) {
                         Icon(
                             imageVector = if (poi.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -224,6 +235,7 @@ fun RouteCard(
     onStartNavigation: () -> Unit,
     onStopNavigation: () -> Unit,
     onToggleFavorite: (PoiEntity) -> Unit,
+    onEditPoi: ((PoiEntity) -> Unit)? = null,
     onDeletePoi: ((PoiEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -271,6 +283,15 @@ fun RouteCard(
 
                 Row {
                     if (selectedPoi != null) {
+                        if (onEditPoi != null) {
+                            IconButton(onClick = { onEditPoi(selectedPoi) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Ort bearbeiten",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         IconButton(onClick = { onToggleFavorite(selectedPoi) }) {
                             Icon(
                                 imageVector = if (selectedPoi.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,

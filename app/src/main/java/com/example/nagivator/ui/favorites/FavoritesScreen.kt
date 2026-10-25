@@ -18,8 +18,10 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -30,16 +32,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.nagivator.data.local.entity.PoiEntity
 import com.example.nagivator.data.local.entity.SavedRouteEntity
 import com.example.nagivator.domain.model.PoiIconRegistry
+import com.example.nagivator.ui.components.IconPicker
 
 @Composable
 fun FavoritesScreen(
@@ -51,6 +59,14 @@ fun FavoritesScreen(
     val favoritePois by viewModel.favoritePois.collectAsState()
     val favoriteRoutes by viewModel.favoriteRoutes.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+
+    var editingPoi by remember { mutableStateOf<PoiEntity?>(null) }
+    var editPoiTitle by remember { mutableStateOf("") }
+    var editPoiDesc by remember { mutableStateOf("") }
+    var editPoiIcon by remember { mutableStateOf("place") }
+
+    var editingRoute by remember { mutableStateOf<SavedRouteEntity?>(null) }
+    var editRouteTitle by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier
@@ -177,12 +193,24 @@ fun FavoritesScreen(
                                     )
                                 },
                                 trailingContent = {
-                                    IconButton(onClick = { viewModel.deleteRoute(route) }) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "Route löschen",
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(onClick = {
+                                            editingRoute = route
+                                            editRouteTitle = route.title
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Route umbenennen",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        IconButton(onClick = { viewModel.deleteRoute(route) }) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Route löschen",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
                                 },
                                 colors = ListItemDefaults.colors(
@@ -237,12 +265,26 @@ fun FavoritesScreen(
                                     )
                                 },
                                 trailingContent = {
-                                    IconButton(onClick = { viewModel.toggleFavorite(poi) }) {
-                                        Icon(
-                                            Icons.Default.Favorite,
-                                            contentDescription = "Aus Favoriten entfernen",
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(onClick = {
+                                            editingPoi = poi
+                                            editPoiTitle = poi.title.ifBlank { poi.displayTitle }
+                                            editPoiDesc = poi.description
+                                            editPoiIcon = poi.iconName
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Favorit bearbeiten",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        IconButton(onClick = { viewModel.toggleFavorite(poi) }) {
+                                            Icon(
+                                                Icons.Default.Favorite,
+                                                contentDescription = "Aus Favoriten entfernen",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
                                     }
                                 },
                                 colors = ListItemDefaults.colors(
@@ -254,5 +296,138 @@ fun FavoritesScreen(
                 }
             }
         }
+    }
+
+    // Edit Route Dialog
+    editingRoute?.let { route ->
+        AlertDialog(
+            onDismissRequest = { editingRoute = null },
+            icon = {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Route umbenennen",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Geben Sie der gespeicherten Route einen neuen Namen:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editRouteTitle,
+                        onValueChange = { editRouteTitle = it },
+                        label = { Text("Name der Route") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmed = editRouteTitle.trim()
+                        if (trimmed.isNotBlank()) {
+                            viewModel.updateRouteTitle(route, trimmed)
+                        }
+                        editingRoute = null
+                    }
+                ) {
+                    Text("Speichern", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingRoute = null }) {
+                    Text("Abbrechen", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+
+    // Edit POI Dialog
+    editingPoi?.let { poi ->
+        AlertDialog(
+            onDismissRequest = { editingPoi = null },
+            icon = {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Favorit bearbeiten",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Passen Sie den Namen, die Notiz oder das Symbol des Favoriten an:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editPoiTitle,
+                        onValueChange = { editPoiTitle = it },
+                        label = { Text("Name des Favoriten") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editPoiDesc,
+                        onValueChange = { editPoiDesc = it },
+                        label = { Text("Notiz / Beschreibung (optional)") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    IconPicker(
+                        selectedIconKey = editPoiIcon,
+                        onIconSelected = { editPoiIcon = it }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmedTitle = editPoiTitle.trim()
+                        val updated = poi.copy(
+                            title = if (trimmedTitle.isNotBlank()) trimmedTitle else poi.displayTitle,
+                            description = editPoiDesc.trim(),
+                            iconName = editPoiIcon,
+                            isFavorite = true
+                        )
+                        viewModel.updatePoi(updated)
+                        editingPoi = null
+                    }
+                ) {
+                    Text("Speichern", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingPoi = null }) {
+                    Text("Abbrechen", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     }
 }

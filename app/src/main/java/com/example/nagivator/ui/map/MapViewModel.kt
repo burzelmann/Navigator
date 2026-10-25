@@ -490,23 +490,60 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(newPoiCandidate = point) }
     }
 
-    fun saveCandidateAsPoi(title: String, description: String = "", iconName: String = "place") {
+    fun dismissNewPoiCandidate() {
+        _uiState.update { it.copy(newPoiCandidate = null) }
+    }
+
+    fun saveCandidateAsPoi(title: String, description: String = "", iconName: String = "place", isFavorite: Boolean = true) {
         val candidate = _uiState.value.newPoiCandidate ?: return
         val fallbackTitle = title.ifBlank {
             if (description.isNotBlank()) description
             else "Markierter Ort (%.3f, %.3f)".format(candidate.latitude, candidate.longitude)
         }
         viewModelScope.launch {
-            poiRepository.savePoi(
+            val savedId = poiRepository.savePoi(
                 PoiEntity(
                     title = fallbackTitle,
                     description = description,
                     latitude = candidate.latitude,
                     longitude = candidate.longitude,
-                    iconName = iconName
+                    iconName = iconName,
+                    isFavorite = isFavorite
                 )
             )
             _uiState.update { it.copy(newPoiCandidate = null) }
+        }
+    }
+
+    fun savePoiAsFavorite(poi: PoiEntity, customTitle: String, description: String = "", iconName: String = "place") {
+        val fallbackTitle = customTitle.ifBlank { poi.displayTitle }
+        viewModelScope.launch {
+            val updated = poi.copy(
+                title = fallbackTitle,
+                description = description,
+                iconName = iconName,
+                isFavorite = true
+            )
+            val savedId = poiRepository.savePoi(updated)
+            val finalPoi = updated.copy(id = if (poi.id == 0L) savedId else poi.id)
+            _uiState.update { state ->
+                state.copy(selectedPoi = finalPoi)
+            }
+        }
+    }
+
+    fun updatePoi(poi: PoiEntity) {
+        viewModelScope.launch {
+            val savedId = poiRepository.savePoi(poi)
+            val finalPoi = poi.copy(id = if (poi.id == 0L) savedId else poi.id)
+            _uiState.update { state ->
+                if (state.selectedPoi?.id == poi.id ||
+                    (poi.id == 0L && state.selectedPoi?.latitude == poi.latitude && state.selectedPoi?.longitude == poi.longitude)) {
+                    state.copy(selectedPoi = finalPoi)
+                } else {
+                    state
+                }
+            }
         }
     }
 

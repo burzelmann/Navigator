@@ -67,6 +67,18 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun updatePoi(poi: PoiEntity) {
+        viewModelScope.launch {
+            poiRepository.savePoi(poi)
+        }
+    }
+
+    fun updateRouteTitle(route: SavedRouteEntity, newTitle: String) {
+        viewModelScope.launch {
+            poiRepository.saveRoute(route.copy(title = newTitle))
+        }
+    }
+
     fun deleteRoute(route: SavedRouteEntity) {
         viewModelScope.launch {
             poiRepository.deleteRoute(route)
