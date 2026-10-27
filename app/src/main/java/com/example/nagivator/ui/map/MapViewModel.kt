@@ -25,6 +25,7 @@ import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.TravelMode
+import com.example.nagivator.domain.NavigationStateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -134,6 +135,19 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        viewModelScope.launch {
+            NavigationStateHolder.isNavigating.collect { isNavigating ->
+                if (_uiState.value.isNavigating != isNavigating) {
+                    val autoRoute = NavigationStateHolder.activeRoute.value
+                    _uiState.update {
+                        it.copy(
+                            isNavigating = isNavigating,
+                            activeRoute = autoRoute ?: it.activeRoute
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private var locationJob: Job? = null
@@ -146,6 +160,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 .collect { location ->
                     val isFirstFix = _uiState.value.currentLocation == null
                     _uiState.update { it.copy(currentLocation = location) }
+                    NavigationStateHolder.updateLocation(location)
                     
                     if (isFirstFix) {
                         centerOnCurrentLocation()
@@ -690,6 +705,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     val carPref = userSettingsRepository.settings.value.carSpeed
                     val result = routingRepository.getRoute(updatedWaypoints, state.travelMode, footPref, carPref)
                     result.onSuccess { newRoute ->
+                        NavigationStateHolder.startNavigation(newRoute)
                         _uiState.update {
                             it.copy(
                                 activeRoute = newRoute,
@@ -712,6 +728,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        activeRoute?.let { NavigationStateHolder.startNavigation(it) }
         _uiState.update { 
             it.copy(
                 isNavigating = true,
@@ -722,6 +739,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleMute() {
+        NavigationStateHolder.toggleMute()
         _uiState.update { it.copy(isMuted = !it.isMuted) }
     }
 
@@ -730,6 +748,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopNavigation() {
+        NavigationStateHolder.stopNavigation()
         _uiState.update { 
             it.copy(
                 isNavigating = false, 

@@ -15,8 +15,11 @@ osmdroid = "6.1.20"
 retrofit = "2.11.0"
 kotlinxSerialization = "1.7.3"
 navigationCompose = "2.8.8"
+carApp = "1.7.0"
 
 [libraries]
+androidx-car-app = { group = "androidx.car.app", name = "app", version.ref = "carApp" }
+androidx-car-app-projected = { group = "androidx.car.app", name = "app-projected", version.ref = "carApp" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

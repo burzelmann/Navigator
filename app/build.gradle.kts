@@ -60,6 +60,10 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.osmdroid.android)
 
+    // Android Auto
+    implementation(libs.androidx.car.app)
+    implementation(libs.androidx.car.app.projected)
+
     // Networking & Serialization
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization)

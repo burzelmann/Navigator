@@ -55,7 +55,9 @@ class LocationRepository(context: Context) {
                     LocationPoint(
                         latitude = loc.latitude,
                         longitude = loc.longitude,
-                        name = "Aktueller Standort"
+                        name = "Aktueller Standort",
+                        bearing = if (loc.hasBearing()) loc.bearing else 0f,
+                        speedMps = if (loc.hasSpeed()) loc.speed else 0f
                     )
                 )
             }
@@ -74,7 +76,9 @@ class LocationRepository(context: Context) {
                     LocationPoint(
                         latitude = loc.latitude,
                         longitude = loc.longitude,
-                        name = "Aktueller Standort"
+                        name = "Aktueller Standort",
+                        bearing = if (loc.hasBearing()) loc.bearing else 0f,
+                        speedMps = if (loc.hasSpeed()) loc.speed else 0f
                     )
                 )
             }
@@ -93,7 +97,9 @@ class LocationRepository(context: Context) {
                         LocationPoint(
                             latitude = location.latitude,
                             longitude = location.longitude,
-                            name = "Aktueller Standort"
+                            name = "Aktueller Standort",
+                            bearing = if (location.hasBearing()) location.bearing else 0f,
+                            speedMps = if (location.hasSpeed()) location.speed else 0f
                         )
                     )
                 }
