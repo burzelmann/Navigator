@@ -66,7 +66,7 @@ fun OsmMapView(
     val context = LocalContext.current
 
     // Set proper User-Agent and load osmdroid configuration
-    Configuration.getInstance().userAgentValue = "NagivatorApp/1.0 (Android App; com.example.nagivator)"
+    Configuration.getInstance().userAgentValue = "NagivatorApp/1.0 (Android App; com.verhuelsdonk.navigator)"
     Configuration.getInstance().load(context, context.getSharedPreferences("osmdroid_pref", Context.MODE_PRIVATE))
 
     // Location Pulse Overlay - drawn natively on Canvas

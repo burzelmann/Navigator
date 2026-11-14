@@ -12,6 +12,10 @@
 /captures
 /.artifacts/
 *.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
 .externalNativeBuild
 .cxx
 local.properties

@@ -269,10 +269,20 @@ class RoutingRepository {
         )
     }
 
-    suspend fun searchPlaces(query: String): Result<List<LocationPoint>> = withContext(Dispatchers.IO) {
+    suspend fun searchPlaces(
+        query: String,
+        biasLat: Double? = null,
+        biasLon: Double? = null,
+        limit: Int = 10
+    ): Result<List<LocationPoint>> = withContext(Dispatchers.IO) {
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
-            val response = geocodingApi.searchPlaces(query = query)
+            val response = geocodingApi.searchPlaces(
+                query = query,
+                limit = limit,
+                lat = biasLat,
+                lon = biasLon
+            )
             response.features.mapNotNull { feature ->
                 val coords = feature.geometry.coordinates
                 if (coords.size >= 2) {

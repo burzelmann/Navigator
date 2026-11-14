@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         
         // Configure osmdroid user agent & cache
         val osmConfig = Configuration.getInstance()
-        osmConfig.userAgentValue = "Nagivator/1.0 (Android App; com.example.nagivator)"
+        osmConfig.userAgentValue = "Nagivator/1.0 (Android App; com.verhuelsdonk.navigator)"
         osmConfig.tileFileSystemCacheMaxBytes = 500L * 1024L * 1024L
         osmConfig.tileFileSystemCacheTrimBytes = 400L * 1024L * 1024L
 

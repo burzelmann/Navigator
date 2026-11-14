@@ -36,7 +36,9 @@ interface GeocodingApi {
     suspend fun searchPlaces(
         @Query("q") query: String,
         @Query("limit") limit: Int = 10,
-        @Query("lang") lang: String = "de"
+        @Query("lang") lang: String = "de",
+        @Query("lat") lat: Double? = null,
+        @Query("lon") lon: Double? = null
     ): PhotonResponse
 
     @GET("reverse")

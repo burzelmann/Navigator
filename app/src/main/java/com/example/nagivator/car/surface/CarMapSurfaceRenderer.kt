@@ -10,17 +10,23 @@ import android.graphics.PointF
 import android.graphics.Rect
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.view.Surface
 import androidx.car.app.CarContext
 import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
+import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
-import kotlin.math.atan
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.ln
-import kotlin.math.sinh
 import kotlin.math.tan
+
+enum class MapPerspective {
+    NORTH_UP,
+    HEADING_UP
+}
 
 class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallback {
 
@@ -30,7 +36,16 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     private var visibleArea: Rect? = null
 
     private var currentZoom = 16
-    private var currentLocation: LocationPoint? = null
+    @Volatile
+    private var perspective: MapPerspective = MapPerspective.NORTH_UP
+
+    private var startLocation: LocationPoint? = null
+    private var targetLocation: LocationPoint? = null
+    private var renderedLocation: LocationPoint? = null
+    private var transitionStartMs: Long = 0L
+    private val transitionDurationMs: Long = 1000L
+    private var isAnimating = false
+
     private var activeRoute: RouteResult? = null
     private var isFollowLocation = true
 
@@ -41,6 +56,28 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     private val renderThread = HandlerThread("CarSurfaceRenderer").apply { start() }
     private val renderHandler = Handler(renderThread.looper)
     private var isRenderPending = false
+
+    private val animationRunnable = object : Runnable {
+        override fun run() {
+            val start = startLocation
+            val target = targetLocation
+            if (surface == null || start == null || target == null) {
+                isAnimating = false
+                return
+            }
+
+            val elapsed = SystemClock.uptimeMillis() - transitionStartMs
+            val t = (elapsed.toFloat() / transitionDurationMs).coerceIn(0f, 1f)
+            renderedLocation = CarNavigationHelper.interpolateLocation(start, target, t)
+            render()
+
+            if (t < 1f) {
+                renderHandler.postDelayed(this, 33L)
+            } else {
+                isAnimating = false
+            }
+        }
+    }
 
     // Paints
     private val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -109,12 +146,43 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
 
     override fun onSurfaceDestroyed(surfaceContainer: SurfaceContainer) {
         surface = null
+        renderHandler.removeCallbacks(animationRunnable)
+        isAnimating = false
+    }
+
+    fun getPerspective(): MapPerspective = perspective
+
+    fun togglePerspective(): MapPerspective {
+        perspective = if (perspective == MapPerspective.NORTH_UP) {
+            MapPerspective.HEADING_UP
+        } else {
+            MapPerspective.NORTH_UP
+        }
+        requestRender()
+        return perspective
     }
 
     fun updateLocation(point: LocationPoint) {
-        currentLocation = point
-        if (isFollowLocation) {
-            requestRender()
+        renderHandler.post {
+            val stabilized = CarNavigationHelper.preserveBearingIfStationary(targetLocation, point)
+            val current = renderedLocation
+            if (current == null || !isFollowLocation) {
+                startLocation = stabilized
+                targetLocation = stabilized
+                renderedLocation = stabilized
+                if (isFollowLocation) {
+                    render()
+                }
+                return@post
+            }
+
+            startLocation = current
+            targetLocation = stabilized
+            transitionStartMs = SystemClock.uptimeMillis()
+            if (!isAnimating) {
+                isAnimating = true
+                renderHandler.post(animationRunnable)
+            }
         }
     }
 
@@ -169,48 +237,72 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
             val isDark = carContext.isDarkMode
             canvas.drawColor(if (isDark) Color.parseColor("#12161A") else Color.parseColor("#EBF2F5"))
 
-            val loc = currentLocation ?: LocationPoint(52.5200, 13.4050, "Berlin")
+            val loc = renderedLocation ?: targetLocation ?: LocationPoint(52.5200, 13.4050, "Berlin")
             val centerLat = loc.latitude
             val centerLon = loc.longitude
             val zoom = currentZoom
+            val mode = perspective
 
             val width = surfaceWidth.toFloat()
             val height = surfaceHeight.toFloat()
             val tileSize = 256f
 
+            val va = visibleArea
+            val pivotX = if (va != null && !va.isEmpty) va.centerX().toFloat() else width / 2f
+            val pivotY = if (va != null && !va.isEmpty) {
+                va.top + va.height() * (if (mode == MapPerspective.HEADING_UP) 0.68f else 0.5f)
+            } else {
+                height * (if (mode == MapPerspective.HEADING_UP) 0.68f else 0.5f)
+            }
+
             val centerTx = lonToTileX(centerLon, zoom)
             val centerTy = latToTileY(centerLat, zoom)
 
-            // 1. Render Map Tiles
+            // 1. Render Map Tiles (expanded bounds for rotated HEADING_UP view)
             tilePaint.colorFilter = if (isDark) darkFilter else null
 
-            val halfTilesX = (width / (2f * tileSize)) + 1
-            val halfTilesY = (height / (2f * tileSize)) + 1
+            val maxDx = maxOf(pivotX, width - pivotX)
+            val maxDy = maxOf(pivotY, height - pivotY)
+            val halfTilesX: Int
+            val halfTilesY: Int
+            if (mode == MapPerspective.HEADING_UP) {
+                val radiusTiles = (hypot(maxDx, maxDy) / tileSize).toInt() + 2
+                halfTilesX = radiusTiles
+                halfTilesY = radiusTiles
+            } else {
+                halfTilesX = (maxDx / tileSize).toInt() + 2
+                halfTilesY = (maxDy / tileSize).toInt() + 2
+            }
 
             val minX = (centerTx - halfTilesX).toInt().coerceAtLeast(0)
             val maxX = (centerTx + halfTilesX).toInt().coerceAtMost((1 shl zoom) - 1)
             val minY = (centerTy - halfTilesY).toInt().coerceAtLeast(0)
             val maxY = (centerTy + halfTilesY).toInt().coerceAtMost((1 shl zoom) - 1)
 
+            // Screen projection helper anchored at (pivotX, pivotY)
+            fun project(lat: Double, lon: Double): PointF {
+                val tx = lonToTileX(lon, zoom)
+                val ty = latToTileY(lat, zoom)
+                val px = pivotX + (tx - centerTx).toFloat() * tileSize
+                val py = pivotY + (ty - centerTy).toFloat() * tileSize
+                return PointF(px, py)
+            }
+
+            canvas.save()
+            if (mode == MapPerspective.HEADING_UP) {
+                canvas.rotate(-loc.bearing, pivotX, pivotY)
+            }
+
             for (tx in minX..maxX) {
                 for (ty in minY..maxY) {
                     val tileBitmap = tileProvider.getTile(zoom, tx, ty)
-                    val px = (width / 2f) + (tx - centerTx).toFloat() * tileSize
-                    val py = (height / 2f) + (ty - centerTy).toFloat() * tileSize
+                    val px = pivotX + (tx - centerTx).toFloat() * tileSize
+                    val py = pivotY + (ty - centerTy).toFloat() * tileSize
 
                     if (tileBitmap != null) {
                         canvas.drawBitmap(tileBitmap, px, py, tilePaint)
                     }
                 }
-            }
-
-            // Screen projection helper
-            fun project(lat: Double, lon: Double): PointF {
-                val tx = lonToTileX(lon, zoom)
-                val ty = latToTileY(lat, zoom)
-                val px = (width / 2f) + (tx - centerTx).toFloat() * tileSize
-                val py = (height / 2f) + (ty - centerTy).toFloat() * tileSize
-                return PointF(px, py)
             }
 
             // 2. Render Route Polyline
@@ -231,15 +323,18 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
                 canvas.drawCircle(destProj.x, destProj.y, 7f, vehicleArrowPaint)
             }
 
-            // 3. Render Vehicle Location & Heading
-            val carPt = project(loc.latitude, loc.longitude)
-            canvas.drawCircle(carPt.x, carPt.y, 36f, vehicleHaloPaint)
-            canvas.drawCircle(carPt.x, carPt.y, 20f, vehicleBodyPaint)
+            canvas.restore()
 
-            // Vehicle Heading Arrow
+            // 3. Render Vehicle Location & Heading
+            canvas.drawCircle(pivotX, pivotY, 36f, vehicleHaloPaint)
+            canvas.drawCircle(pivotX, pivotY, 20f, vehicleBodyPaint)
+
+            // Vehicle Heading Arrow (points straight up in HEADING_UP, or true bearing in NORTH_UP)
             canvas.save()
-            canvas.translate(carPt.x, carPt.y)
-            canvas.rotate(loc.bearing)
+            canvas.translate(pivotX, pivotY)
+            if (mode == MapPerspective.NORTH_UP) {
+                canvas.rotate(loc.bearing)
+            }
             val arrowPath = Path().apply {
                 moveTo(0f, -14f)
                 lineTo(10f, 10f)
@@ -267,6 +362,8 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
 
     fun destroy() {
         surface = null
+        renderHandler.removeCallbacks(animationRunnable)
+        isAnimating = false
         tileProvider.clear()
         renderThread.quitSafely()
     }

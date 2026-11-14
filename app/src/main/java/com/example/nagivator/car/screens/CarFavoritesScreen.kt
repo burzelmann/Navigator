@@ -5,6 +5,7 @@ import androidx.car.app.CarContext
 import androidx.car.app.CarToast
 import androidx.car.app.Screen
 import androidx.car.app.model.Action
+import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Row
@@ -47,6 +48,14 @@ class CarFavoritesScreen(
     }
 
     override fun onGetTemplate(): Template {
+        if (isCalculating) {
+            return ListTemplate.Builder()
+                .setTitle("Route wird berechnet...")
+                .setHeaderAction(Action.BACK)
+                .setLoading(true)
+                .build()
+        }
+
         val listBuilder = ItemList.Builder()
 
         if (favoritePois.isEmpty()) {
@@ -81,17 +90,35 @@ class CarFavoritesScreen(
             }
         }
 
+        val actionStrip = ActionStrip.Builder()
+            .addAction(
+                Action.Builder()
+                    .setTitle("Suche")
+                    .setOnClickListener {
+                        screenManager.push(CarSearchScreen(carContext, surfaceRenderer))
+                    }
+                    .build()
+            )
+            .build()
+
         return ListTemplate.Builder()
-            .setTitle(if (isCalculating) "Route wird berechnet..." else "Meine Favoriten")
+            .setTitle("Meine Favoriten")
             .setHeaderAction(Action.BACK)
+            .setActionStrip(actionStrip)
             .setSingleList(listBuilder.build())
-            .setLoading(isCalculating)
             .build()
     }
 
     private fun startNavigationToPoi(poi: PoiEntity) {
         val startLoc = NavigationStateHolder.currentLocation.value
-            ?: LocationPoint(latitude = 52.5200, longitude = 13.4050, name = "Start")
+        if (startLoc == null) {
+            CarToast.makeText(
+                carContext,
+                "Warte auf GPS-Position...",
+                CarToast.LENGTH_SHORT
+            ).show()
+            return
+        }
 
         val destLoc = LocationPoint(
             latitude = poi.latitude,
@@ -112,7 +139,10 @@ class CarFavoritesScreen(
                 isCalculating = false
                 NavigationStateHolder.startNavigation(route)
                 surfaceRenderer.updateRoute(route)
-                screenManager.push(CarNavigationScreen(carContext, surfaceRenderer))
+                screenManager.popToRoot()
+                if (screenManager.top !is CarNavigationScreen) {
+                    screenManager.push(CarNavigationScreen(carContext, surfaceRenderer))
+                }
             }.onFailure { error ->
                 isCalculating = false
                 invalidate()

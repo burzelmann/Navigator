@@ -20,8 +20,10 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.nagivator.car.CarManeuverConverter
+import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
+import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
@@ -57,14 +59,30 @@ class CarNavigationScreen(
         })
         navManager.navigationStarted()
 
-        // Sync initial route with surface renderer
-        surfaceRenderer.updateRoute(NavigationStateHolder.activeRoute.value)
+        // Sync initial route with surface renderer and skip initial "depart" step if a turn follows
+        val initialRoute = NavigationStateHolder.activeRoute.value
+        surfaceRenderer.updateRoute(initialRoute)
+        if (initialRoute != null && NavigationStateHolder.currentStepIndex.value == 0) {
+            val startIdx = CarNavigationHelper.initialStepIndex(initialRoute.steps)
+            if (startIdx != 0) {
+                NavigationStateHolder.updateStepIndex(startIdx)
+            }
+        }
 
         // Observe live GPS updates during navigation
         locationJob = lifecycleScope.launch {
             NavigationStateHolder.currentLocation.collectLatest { loc ->
                 if (loc != null) {
                     onLocationUpdated(loc)
+                }
+            }
+        }
+
+        // Observe external stop of navigation (e.g. from phone)
+        lifecycleScope.launch {
+            NavigationStateHolder.isNavigating.collectLatest { navigating ->
+                if (!navigating) {
+                    endNavigation()
                 }
             }
         }
@@ -113,8 +131,18 @@ class CarNavigationScreen(
                 )
                 val distToManeuver = distResults[0]
 
-                // Step completion
-                if (distToManeuver < 35f) {
+                // Step completion (or recovery if a maneuver radius was skipped at speed)
+                val nextManeuverLoc = if (currentIndex + 1 < steps.size) steps[currentIndex + 1].maneuverLocation else null
+                val distToNextManeuver = if (nextManeuverLoc != null) {
+                    Location.distanceBetween(
+                        loc.latitude, loc.longitude,
+                        nextManeuverLoc.latitude, nextManeuverLoc.longitude,
+                        distResults
+                    )
+                    distResults[0]
+                } else Float.MAX_VALUE
+
+                if (distToManeuver < 45f || (distToManeuver > 150f && distToNextManeuver < 60f)) {
                     val nextIdx = (currentIndex + 1).coerceAtMost(steps.size - 1)
                     if (nextIdx != currentIndex) {
                         NavigationStateHolder.updateStepIndex(nextIdx)
@@ -164,9 +192,8 @@ class CarNavigationScreen(
                 val result = routingRepository.getRoute(updatedWaypoints, TravelMode.CAR)
                 result.onSuccess { newRoute ->
                     NavigationStateHolder.updateRoute(newRoute)
-                    NavigationStateHolder.updateStepIndex(0)
+                    NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
                     surfaceRenderer.updateRoute(newRoute)
-                    voiceGuidance.speak("Route wird neu berechnet")
                     lastAnnouncedStepIndex = -1
                     invalidate()
                 }
@@ -180,7 +207,18 @@ class CarNavigationScreen(
         val route = NavigationStateHolder.activeRoute.value
         if (route == null || route.steps.isEmpty()) {
             endNavigation()
-            return NavigationTemplate.Builder().build()
+            val fallbackActionStrip = ActionStrip.Builder()
+                .addAction(
+                    Action.Builder()
+                        .setTitle("Zurück")
+                        .setOnClickListener { endNavigation() }
+                        .build()
+                )
+                .build()
+            return NavigationTemplate.Builder()
+                .setActionStrip(fallbackActionStrip)
+                .setBackgroundColor(CarColor.SECONDARY)
+                .build()
         }
 
         val stepIndex = NavigationStateHolder.currentStepIndex.value.coerceIn(0, route.steps.size - 1)
@@ -189,26 +227,45 @@ class CarNavigationScreen(
 
         // Maneuver
         val maneuver = CarManeuverConverter.toCarManeuver(currentStep.maneuverType, currentStep.maneuverModifier)
-        val stepBuilder = Step.Builder(currentStep.instruction)
+        val instruction = currentStep.instruction.ifBlank { "Route folgen" }
+        val stepBuilder = Step.Builder(instruction)
             .setManeuver(maneuver)
 
-        // Travel Estimates
-        val remainingDistMeters = route.totalDistanceMeters.coerceAtLeast(0.0)
-        val remainingSeconds = route.totalDurationSeconds.coerceAtLeast(0.0)
+        // Travel Estimates (dynamic remaining distance + ETA)
+        val currentLoc = NavigationStateHolder.currentLocation.value
+        val remainingDistMeters = if (route.geometryPoints.isNotEmpty()) {
+            CarNavigationHelper.remainingPolylineMeters(currentLoc, route.geometryPoints)
+        } else {
+            route.totalDistanceMeters.coerceAtLeast(0.0)
+        }
+        val remainingSeconds = CarNavigationHelper.estimateRemainingSeconds(route, remainingDistMeters)
         val etaMillis = System.currentTimeMillis() + (remainingSeconds * 1000).toLong()
 
-        val distObj = Distance.create(remainingDistMeters / 1000.0, Distance.UNIT_KILOMETERS)
+        val distObj = CarNavigationHelper.createCarDistance(remainingDistMeters)
         val arrivalTime = DateTimeWithZone.create(etaMillis, TimeZone.getDefault())
-        val travelEstimate = TravelEstimate.Builder(distObj, arrivalTime).build()
+        val travelEstimate = TravelEstimate.Builder(distObj, arrivalTime)
+            .setRemainingTimeSeconds(remainingSeconds.toLong())
+            .build()
 
-        val stepDistObj = Distance.create(currentStep.distanceMeters / 1000.0, Distance.UNIT_KILOMETERS)
+        // Live distance to upcoming maneuver
+        val maneuverLoc = currentStep.maneuverLocation
+        val stepDistMeters = if (currentLoc != null && maneuverLoc != null) {
+            CarNavigationHelper.haversineMeters(
+                currentLoc.latitude, currentLoc.longitude,
+                maneuverLoc.latitude, maneuverLoc.longitude
+            )
+        } else {
+            currentStep.distanceMeters.coerceAtLeast(0.0)
+        }
+        val stepDistObj = CarNavigationHelper.createCarDistance(stepDistMeters)
 
         val routingInfoBuilder = RoutingInfo.Builder()
             .setCurrentStep(stepBuilder.build(), stepDistObj)
 
         if (nextStep != null) {
             val nextManeuver = CarManeuverConverter.toCarManeuver(nextStep.maneuverType, nextStep.maneuverModifier)
-            val nextStepObj = Step.Builder(nextStep.instruction)
+            val nextInstruction = nextStep.instruction.ifBlank { "Route folgen" }
+            val nextStepObj = Step.Builder(nextInstruction)
                 .setManeuver(nextManeuver)
                 .build()
             routingInfoBuilder.setNextStep(nextStepObj)
@@ -232,6 +289,17 @@ class CarNavigationScreen(
                     .setOnClickListener {
                         NavigationStateHolder.toggleMute()
                         voiceGuidance.setMuted(NavigationStateHolder.isMuted.value)
+                        invalidate()
+                    }
+                    .build()
+            )
+            .addAction(
+                Action.Builder()
+                    .setTitle(
+                        if (surfaceRenderer.getPerspective() == MapPerspective.HEADING_UP) "Norden" else "Fahrt"
+                    )
+                    .setOnClickListener {
+                        surfaceRenderer.togglePerspective()
                         invalidate()
                     }
                     .build()
