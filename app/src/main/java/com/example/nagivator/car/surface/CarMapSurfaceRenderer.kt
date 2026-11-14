@@ -16,6 +16,8 @@ import androidx.car.app.CarContext
 import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import com.example.nagivator.car.CarNavigationHelper
+import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import kotlin.math.cos
@@ -38,6 +40,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     private var currentZoom = 16
     @Volatile
     private var perspective: MapPerspective = MapPerspective.NORTH_UP
+    private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
 
     private var startLocation: LocationPoint? = null
     private var targetLocation: LocationPoint? = null
@@ -234,7 +237,11 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
         } ?: return
 
         try {
-            val isDark = carContext.isDarkMode
+            val isDark = when (userSettingsRepository.settings.value.themeMode) {
+                AppThemeMode.SYSTEM -> carContext.isDarkMode
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
             canvas.drawColor(if (isDark) Color.parseColor("#12161A") else Color.parseColor("#EBF2F5"))
 
             val loc = renderedLocation ?: targetLocation ?: LocationPoint(52.5200, 13.4050, "Berlin")

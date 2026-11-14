@@ -1,6 +1,7 @@
 package com.example.nagivator.car
 
 import androidx.car.app.model.Distance
+import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.RouteStep
@@ -95,6 +96,13 @@ class CarNavigationHelperTest {
 
         val subtitleWithoutGps = CarNavigationHelper.formatSearchSubtitle(null, dest)
         assertEquals("Rheurdt, Deutschland", subtitleWithoutGps)
+    }
+
+    @Test
+    fun nextThemeMode_cyclesSystemLightDark() {
+        assertEquals(AppThemeMode.LIGHT, CarNavigationHelper.nextThemeMode(AppThemeMode.SYSTEM))
+        assertEquals(AppThemeMode.DARK, CarNavigationHelper.nextThemeMode(AppThemeMode.LIGHT))
+        assertEquals(AppThemeMode.SYSTEM, CarNavigationHelper.nextThemeMode(AppThemeMode.DARK))
     }
 }
 

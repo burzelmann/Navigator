@@ -1,3 +1,4 @@
 Neu in dieser Version:
-- Automatischer Test-Build via Google Play Publishing API
-- Enthält Zielsuche in Android Auto, 30-FPS-Interpolation, ETA und Fahrtrichtung oben
+- Neuer Button „Optionen“ (Schnelleinstellungen) auf Start- und Navigationsbildschirm in Android Auto
+- Umschalter für Darstellung (System / Immer hell / Immer dunkel), synchron mit der Smartphone-App
+- Direkte Umschaltung für Kartenperspektive und Sprachausgabe in den Schnelleinstellungen

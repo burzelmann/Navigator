@@ -1,6 +1,7 @@
 package com.example.nagivator.car
 
 import androidx.car.app.model.Distance
+import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.RouteStep
@@ -139,6 +140,15 @@ object CarNavigationHelper {
             "%.1f km".format(distMeters / 1000.0)
         }
         return "$distStr • $addr"
+    }
+
+    /**
+     * Cycles through theme modes in the order SYSTEM -> LIGHT -> DARK -> SYSTEM.
+     */
+    fun nextThemeMode(current: AppThemeMode): AppThemeMode = when (current) {
+        AppThemeMode.SYSTEM -> AppThemeMode.LIGHT
+        AppThemeMode.LIGHT -> AppThemeMode.DARK
+        AppThemeMode.DARK -> AppThemeMode.SYSTEM
     }
 }
 

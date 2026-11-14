@@ -17,6 +17,7 @@ import com.example.nagivator.R
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.LocationRepository
+import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
@@ -26,8 +27,10 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
 
     val surfaceRenderer = CarMapSurfaceRenderer(carContext)
     private val locationRepository = LocationRepository(carContext)
+    private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
     private var locationJob: Job? = null
     private var routeJob: Job? = null
+    private var themeJob: Job? = null
 
     init {
         lifecycle.addObserver(this)
@@ -55,11 +58,19 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
                 }
             }
         }
+
+        // Re-render car surface when theme setting changes (in car or on phone)
+        themeJob = lifecycleScope.launch {
+            userSettingsRepository.settings.collectLatest {
+                surfaceRenderer.requestRender()
+            }
+        }
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
         locationJob?.cancel()
         routeJob?.cancel()
+        themeJob?.cancel()
         surfaceRenderer.destroy()
     }
 
@@ -78,6 +89,13 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
             }
             .build()
 
+        val settingsAction = Action.Builder()
+            .setTitle("Optionen")
+            .setOnClickListener {
+                screenManager.push(CarQuickSettingsScreen(carContext, surfaceRenderer))
+            }
+            .build()
+
         val templateBuilder = NavigationTemplate.Builder()
             .setBackgroundColor(CarColor.SECONDARY)
 
@@ -85,6 +103,7 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
             val actionStrip = ActionStrip.Builder()
                 .addAction(searchAction)
                 .addAction(favoritesAction)
+                .addAction(settingsAction)
                 .build()
 
             val mapActionStrip = ActionStrip.Builder()
@@ -134,6 +153,7 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
             val actionStrip = ActionStrip.Builder()
                 .addAction(searchAction)
                 .addAction(favoritesAction)
+                .addAction(settingsAction)
                 .addAction(
                     Action.Builder()
                         .setTitle(
@@ -142,14 +162,6 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
                         .setOnClickListener {
                             surfaceRenderer.togglePerspective()
                             invalidate()
-                        }
-                        .build()
-                )
-                .addAction(
-                    Action.Builder()
-                        .setTitle("+")
-                        .setOnClickListener {
-                            surfaceRenderer.zoomIn()
                         }
                         .build()
                 )

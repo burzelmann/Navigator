@@ -86,6 +86,14 @@ class CarNavigationScreen(
                 }
             }
         }
+
+        // Sync mute state changes from Quick Settings or phone
+        lifecycleScope.launch {
+            NavigationStateHolder.isMuted.collectLatest { muted ->
+                voiceGuidance.setMuted(muted)
+                invalidate()
+            }
+        }
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
@@ -306,9 +314,9 @@ class CarNavigationScreen(
             )
             .addAction(
                 Action.Builder()
-                    .setTitle("Zentrieren")
+                    .setTitle("Optionen")
                     .setOnClickListener {
-                        surfaceRenderer.centerOnLocation()
+                        screenManager.push(CarQuickSettingsScreen(carContext, surfaceRenderer))
                     }
                     .build()
             )
