@@ -1,0 +1,3 @@
+Neu in dieser Version:
+- Automatischer Test-Build via Google Play Publishing API
+- Enthält Zielsuche in Android Auto, 30-FPS-Interpolation, ETA und Fahrtrichtung oben

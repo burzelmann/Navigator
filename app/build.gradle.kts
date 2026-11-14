@@ -1,3 +1,4 @@
+import com.github.triplet.gradle.androidpublisher.ReleaseStatus
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -6,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.gradle.play.publisher)
 }
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -24,7 +26,7 @@ android {
         applicationId = "com.verhuelsdonk.navigator"
         minSdk = 37
         targetSdk = 37
-        versionCode = 4
+        versionCode = 5
         versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -56,6 +58,16 @@ android {
     buildFeatures {
         compose = true
     }
+}
+
+val playServiceAccountFile = rootProject.file("play-service-account.json")
+play {
+    if (playServiceAccountFile.exists()) {
+        serviceAccountCredentials.set(playServiceAccountFile)
+    }
+    track.set("internal")
+    defaultToAppBundles.set(true)
+    releaseStatus.set(ReleaseStatus.COMPLETED)
 }
 
 dependencies {

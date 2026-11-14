@@ -16,6 +16,7 @@
 *.jks
 *.keystore
 keystore.properties
+play-service-account.json
 .externalNativeBuild
 .cxx
 local.properties
