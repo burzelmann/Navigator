@@ -1,7 +1,8 @@
 # 🗺️ Nagivator - Modern Android Navigation & Outdoor App
 
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)
-![Android](https://img.shields.io/badge/Android-SDK%2035-3DDC84?logo=android&logoColor=white)
+![Android](https://img.shields.io/badge/Android-SDK%2037-3DDC84?logo=android&logoColor=white)
+![Android Auto](https://img.shields.io/badge/Android%20Auto-Car%20App%20Library-3DDC84?logo=androidauto&logoColor=white)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
 ![OSM](https://img.shields.io/badge/OpenStreetMap-osmdroid-7E9680?logo=openstreetmap&logoColor=white)
 ![Room](https://img.shields.io/badge/Database-Room%202.8.5-4285F4?logo=sqlite&logoColor=white)
@@ -61,6 +62,12 @@
   - Anpassbare Auto-Fahrgeschwindigkeiten.
   - Dreifach-Toggle für Erscheinungsbild (*System*, *Immer hell*, *Immer dunkel*).
 
+- 🚗 **Android Auto Integration:**
+  - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel sowie Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
+  - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Kartenausrichtung und Sprachausgabe.
+  - **Suche & Favoriten:** Direkte Zielsuche über die Auto-Tastatur sowie Ein-Klick-Routenstart aus gespeicherten Favoriten.
+  - **Turn-by-Turn-Routenführung:** Blaue Manöver-Karte mit Vektor-Pfeilen, nächstem Schritt, Live-ETA/Reststrecke, automatischer Zielankunft und stabiler Off-Route-Erkennung (Segment-Projektion + 3-fach-Hysterese & Cooldown gegen Fehl-Neuberechnungen auf Wald-/Überlandstrecken).
+
 ---
 
 ## 📱 UI Preview & Navigationsansicht
@@ -103,6 +110,7 @@ Nagivator folgt den modernen Android Development Best Practices und der empfohle
 | :--- | :--- |
 | **Sprache** | Kotlin 2.0.21 (Coroutines, Flow, StateFlow) |
 | **UI Framework** | Jetpack Compose, Material 3, Material Icons Extended |
+| **Android Auto** | Jetpack Car App Library (`androidx.car.app:app`) |
 | **Navigation** | NavigationSuiteScaffold (Material 3 Adaptive) |
 | **Karten-Engine** | `osmdroid` 6.1.20 |
 | **Outdoor-Routing** | BRouter Web API (`brouter.de/brouter`, Hiking Profile) |
@@ -117,20 +125,30 @@ Nagivator folgt den modernen Android Development Best Practices und der empfohle
 
 ```
 com.example.nagivator
+├── car
+│   ├── screens          # Android Auto Screens (CarHome, CarSearch, CarFavorites, CarQuickSettings, CarNavigation)
+│   ├── surface          # CarMapSurfaceRenderer (2D-Karte, Heading-Up, 30-FPS-Interpolation)
+│   └── ...              # CarManeuverConverter, CarNavigationHelper, CarVoiceGuidance
 ├── data
 │   ├── local
 │   │   ├── dao          # Room DAOs (PoiDao, SavedRouteDao, OfflineRegionDao)
 │   │   └── entity       # Room Entities (PoiEntity, SavedRouteEntity, OfflineRegionEntity)
 │   ├── remote           # Retrofit APIs (BRouter, OSRM, Photon Geocoding)
 │   └── repository       # Repositories (PoiRepository, RoutingRepository, LocationRepository, UserSettingsRepository)
+├── debug                # Debug-only Fahrtsimulator (DebugDriveSimulator, DebugDriveReceiver)
 ├── domain
-│   └── model            # Domain Modelle (LocationPoint, RouteResult, SpeedPreference, TravelMode)
+│   ├── model            # Domain Modelle (LocationPoint, RouteResult, SpeedPreference, TravelMode)
+│   └── NavigationStateHolder.kt  # Geteilter Live-Navigationszustand (App <-> Android Auto)
 └── ui
     ├── components       # Wiederverwendbare UI-Komponenten (ElevationProfileView, IconPicker)
     ├── favorites        # Favoriten-Tab (FavoritesScreen, FavoritesViewModel)
     ├── map              # Hauptkarte & Navigation (MapScreen, MapViewModel, OsmMapView, NavigationView, RoutePlannerCard)
     ├── profile          # Profil- & Einstellungen-Tab (ProfileScreen, ProfileViewModel)
     └── theme            # Material 3 Nagivator Theme
+
+scripts/
+├── publish_internal.sh  # Automatisierter Play-Store-Upload (Internal Track, Pflicht-Release-Notes)
+└── start_dhu.sh         # Startet Google Desktop Head Unit (DHU) via ADB Port-Forwarding
 ```
 
 ---
@@ -139,8 +157,8 @@ com.example.nagivator
 
 ### Voraussetzungen
 - **Android Studio** 2024.2+ (Ladybug / Koala / 2026+)
-- **JDK:** Java 17+
-- **Android SDK:** Compile SDK 35, Min SDK 26 (Android 8.0+)
+- **JDK:** Java 17+ (bzw. Android Studio JBR)
+- **Android SDK:** Compile/Target/Min SDK 37
 - **Gerät:** Physisches Android-Gerät oder Emulator (Google Play Services empfohlen)
 
 ### Schritte zum Ausführen
@@ -150,14 +168,33 @@ com.example.nagivator
    cd Navigator
    ```
 2. Projekt in Android Studio öffnen.
-3. Gradle-Sync ausführen:
+3. Unit-Tests & Debug-APK bauen (`com.verhuelsdonk.navigator.debug`, läuft parallel zur Play-Store-App):
    ```bash
-   ./gradlew app:assembleDebug
+   ./gradlew test assembleDebug
    ```
 4. Auf einem verbundenen Android-Gerät installieren:
    ```bash
    ./gradlew installDebug
    ```
+
+### Android Auto Emulator (DHU) & Fahrtsimulation
+1. Auf dem Smartphone in den Android-Auto-Entwicklereinstellungen **Head-Unit-Server starten** aktivieren.
+2. DHU starten:
+   ```bash
+   ./scripts/start_dhu.sh
+   ```
+3. Optional im `debug`-Build eine Fahrt oder Off-Route-Situation per ADB simulieren:
+   ```bash
+   adb shell am broadcast -a com.verhuelsdonk.navigator.DEBUG_DRIVE_START -n com.verhuelsdonk.navigator.debug/com.example.nagivator.car.DebugDriveReceiver
+   adb shell am broadcast -a com.verhuelsdonk.navigator.DEBUG_DRIVE_OFF_ROUTE -n com.verhuelsdonk.navigator.debug/com.example.nagivator.car.DebugDriveReceiver
+   adb shell am broadcast -a com.verhuelsdonk.navigator.DEBUG_DRIVE_STOP -n com.verhuelsdonk.navigator.debug/com.example.nagivator.car.DebugDriveReceiver
+   ```
+
+### Automatisiertes Play-Store-Release (Internal Track)
+Erhöht `versionCode`, speichert Release-Notes, führt `./gradlew test` aus und lädt das signierte App Bundle via Gradle Play Publisher hoch (benötigt lokale `keystore.properties` und `play-service-account.json`):
+```bash
+./scripts/publish_internal.sh "Aussagekräftige Beschreibung der Änderungen..."
+```
 
 ---
 
