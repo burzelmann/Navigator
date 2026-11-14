@@ -43,7 +43,15 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
         locationJob = lifecycleScope.launch {
             locationRepository.getLocationUpdates().collectLatest { point ->
                 NavigationStateHolder.updateLocation(point)
-                surfaceRenderer.updateLocation(point)
+            }
+        }
+
+        // Render any location updates (real GPS or debug simulation) on the car map surface
+        lifecycleScope.launch {
+            NavigationStateHolder.currentLocation.collectLatest { point ->
+                if (point != null) {
+                    surfaceRenderer.updateLocation(point)
+                }
             }
         }
 
@@ -51,8 +59,8 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
         routeJob = lifecycleScope.launch {
             NavigationStateHolder.isNavigating.collectLatest { isNavigating ->
                 if (isNavigating && NavigationStateHolder.activeRoute.value != null) {
-                    screenManager.popToRoot()
                     if (screenManager.top !is CarNavigationScreen) {
+                        screenManager.popToRoot()
                         screenManager.push(CarNavigationScreen(carContext, surfaceRenderer))
                     }
                 }

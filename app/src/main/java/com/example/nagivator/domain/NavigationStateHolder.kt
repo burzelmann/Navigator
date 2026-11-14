@@ -22,7 +22,15 @@ object NavigationStateHolder {
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
-    fun updateLocation(point: LocationPoint) {
+    @Volatile
+    private var isSimulatedLocationActive = false
+
+    fun setSimulatedLocationActive(active: Boolean) {
+        isSimulatedLocationActive = active
+    }
+
+    fun updateLocation(point: LocationPoint, isSimulated: Boolean = false) {
+        if (isSimulatedLocationActive && !isSimulated) return
         _currentLocation.value = point
     }
 

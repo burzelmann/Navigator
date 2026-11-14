@@ -139,10 +139,6 @@ class CarFavoritesScreen(
                 isCalculating = false
                 NavigationStateHolder.startNavigation(route)
                 surfaceRenderer.updateRoute(route)
-                screenManager.popToRoot()
-                if (screenManager.top !is CarNavigationScreen) {
-                    screenManager.push(CarNavigationScreen(carContext, surfaceRenderer))
-                }
             }.onFailure { error ->
                 isCalculating = false
                 invalidate()

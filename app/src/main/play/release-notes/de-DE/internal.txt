@@ -1,4 +1,1 @@
-Neu in dieser Version:
-- Neuer Button „Optionen“ (Schnelleinstellungen) auf Start- und Navigationsbildschirm in Android Auto
-- Umschalter für Darstellung (System / Immer hell / Immer dunkel), synchron mit der Smartphone-App
-- Direkte Umschaltung für Kartenperspektive und Sprachausgabe in den Schnelleinstellungen
+Android Auto Navigation deutlich verbessert: Turn-by-Turn-Manöveranzeige mit Pfeil-Icons, zuverlässiger Navigationsstart aus Favoriten und Suche, stabile Überland- und Waldroutenführung durch Segment-Abstand und 3-fach-Hysterese sowie automatische Zielankunft.

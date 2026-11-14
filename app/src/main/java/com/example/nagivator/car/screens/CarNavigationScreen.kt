@@ -2,6 +2,7 @@ package com.example.nagivator.car.screens
 
 import android.location.Location
 import androidx.car.app.CarContext
+import androidx.car.app.CarToast
 import androidx.car.app.Screen
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
@@ -46,6 +47,9 @@ class CarNavigationScreen(
     private var locationJob: Job? = null
     private var isRecalculating = false
     private var lastAnnouncedStepIndex = -1
+    private var offRouteStrikeCount = 0
+    private var lastRecalculateMs = 0L
+    private var hasArrived = false
 
     init {
         lifecycle.addObserver(this)
@@ -109,24 +113,53 @@ class CarNavigationScreen(
 
         surfaceRenderer.updateLocation(loc)
 
-        // 1. Off-Route Detection & Trailing Polyline Trimming
-        if (route.geometryPoints.isNotEmpty()) {
-            val (minDist, closestIdx) = minDistanceAndIndex(loc, route.geometryPoints)
-            if (minDist > 55f && !isRecalculating) {
-                recalculateRouteOffRoute(loc, route)
-                return
-            } else if (closestIdx > 0 && closestIdx < route.geometryPoints.size - 1) {
-                val trimmedPoints = route.geometryPoints.subList(closestIdx, route.geometryPoints.size)
-                if (trimmedPoints.size >= 2 && trimmedPoints.size != route.geometryPoints.size) {
-                    val updatedRoute = route.copy(geometryPoints = trimmedPoints)
-                    NavigationStateHolder.updateRoute(updatedRoute)
-                    surfaceRenderer.updateRoute(updatedRoute)
+        // 1. Off-Route Detection (segment-based + 3-strike hysteresis) & Trailing Polyline Trimming
+        if (route.geometryPoints.isNotEmpty() && !hasArrived) {
+            val (minDist, closestIdx) = CarNavigationHelper.distanceToPolyline(loc, route.geometryPoints)
+            if (minDist > OFF_ROUTE_THRESHOLD_METERS) {
+                offRouteStrikeCount++
+                val cooldownElapsed = System.currentTimeMillis() - lastRecalculateMs >= RECALCULATE_COOLDOWN_MS
+                if (offRouteStrikeCount >= OFF_ROUTE_STRIKES_REQUIRED && !isRecalculating && cooldownElapsed) {
+                    offRouteStrikeCount = 0
+                    recalculateRouteOffRoute(loc, route)
+                    return
+                }
+            } else {
+                offRouteStrikeCount = 0
+                if (closestIdx > 0 && closestIdx < route.geometryPoints.size - 1) {
+                    val trimmedPoints = route.geometryPoints.subList(closestIdx, route.geometryPoints.size)
+                    if (trimmedPoints.size >= 2 && trimmedPoints.size != route.geometryPoints.size) {
+                        val updatedRoute = route.copy(geometryPoints = trimmedPoints)
+                        NavigationStateHolder.updateRoute(updatedRoute)
+                        surfaceRenderer.updateRoute(updatedRoute)
+                    }
                 }
             }
         }
 
-        // 2. Maneuver Step Progression & Voice Announcements
-        if (steps.isNotEmpty() && currentIndex < steps.size) {
+        // 2. Destination Arrival Detection (independent of intermediate step index)
+        val destinationLoc = steps.lastOrNull()?.maneuverLocation ?: route.geometryPoints.lastOrNull()
+        if (destinationLoc != null && !hasArrived) {
+            val destResults = FloatArray(1)
+            Location.distanceBetween(
+                loc.latitude, loc.longitude,
+                destinationLoc.latitude, destinationLoc.longitude,
+                destResults
+            )
+            if (destResults[0] < ARRIVAL_THRESHOLD_METERS) {
+                hasArrived = true
+                voiceGuidance.speak("Sie haben Ihr Ziel erreicht")
+                CarToast.makeText(carContext, "Ziel erreicht!", CarToast.LENGTH_LONG).show()
+                lifecycleScope.launch {
+                    kotlinx.coroutines.delay(2500L)
+                    endNavigation()
+                }
+                return
+            }
+        }
+
+        // 3. Maneuver Step Progression & Voice Announcements
+        if (steps.isNotEmpty() && currentIndex < steps.size && !hasArrived) {
             val currentStep = steps[currentIndex]
             val maneuverLoc = currentStep.maneuverLocation
 
@@ -139,25 +172,28 @@ class CarNavigationScreen(
                 )
                 val distToManeuver = distResults[0]
 
-                // Step completion (or recovery if a maneuver radius was skipped at speed)
-                val nextManeuverLoc = if (currentIndex + 1 < steps.size) steps[currentIndex + 1].maneuverLocation else null
-                val distToNextManeuver = if (nextManeuverLoc != null) {
-                    Location.distanceBetween(
-                        loc.latitude, loc.longitude,
-                        nextManeuverLoc.latitude, nextManeuverLoc.longitude,
-                        distResults
-                    )
-                    distResults[0]
-                } else Float.MAX_VALUE
-
-                if (distToManeuver < 45f || (distToManeuver > 150f && distToNextManeuver < 60f)) {
-                    val nextIdx = (currentIndex + 1).coerceAtMost(steps.size - 1)
-                    if (nextIdx != currentIndex) {
-                        NavigationStateHolder.updateStepIndex(nextIdx)
-                        lastAnnouncedStepIndex = -1
-                        invalidate()
-                        return
+                // Step completion (or recovery if one or more maneuvers were skipped at speed / GPS gap)
+                var targetIdx: Int? = null
+                if (currentIndex < steps.size - 1) {
+                    if (distToManeuver < 45f) {
+                        targetIdx = currentIndex + 1
+                    } else if (distToManeuver > 150f) {
+                        for (k in (currentIndex + 1) until steps.size) {
+                            val kLoc = steps[k].maneuverLocation ?: continue
+                            Location.distanceBetween(loc.latitude, loc.longitude, kLoc.latitude, kLoc.longitude, distResults)
+                            if (distResults[0] < 60f) {
+                                targetIdx = (k + 1).coerceAtMost(steps.size - 1)
+                                break
+                            }
+                        }
                     }
+                }
+
+                if (targetIdx != null && targetIdx != currentIndex) {
+                    NavigationStateHolder.updateStepIndex(targetIdx)
+                    lastAnnouncedStepIndex = -1
+                    invalidate()
+                    return
                 }
 
                 // Voice guidance triggers
@@ -173,24 +209,10 @@ class CarNavigationScreen(
         invalidate()
     }
 
-    private fun minDistanceAndIndex(loc: LocationPoint, points: List<LocationPoint>): Pair<Float, Int> {
-        var min = Float.MAX_VALUE
-        var minIdx = 0
-        val res = FloatArray(1)
-        for (i in points.indices) {
-            val p = points[i]
-            Location.distanceBetween(loc.latitude, loc.longitude, p.latitude, p.longitude, res)
-            if (res[0] < min) {
-                min = res[0]
-                minIdx = i
-            }
-        }
-        return Pair(min, minIdx)
-    }
-
     private fun recalculateRouteOffRoute(currentLoc: LocationPoint, currentRoute: RouteResult) {
         if (currentRoute.waypoints.isEmpty()) return
         isRecalculating = true
+        lastRecalculateMs = System.currentTimeMillis()
 
         lifecycleScope.launch {
             try {
@@ -234,7 +256,11 @@ class CarNavigationScreen(
         val nextStep = if (stepIndex < route.steps.size - 1) route.steps[stepIndex + 1] else null
 
         // Maneuver
-        val maneuver = CarManeuverConverter.toCarManeuver(currentStep.maneuverType, currentStep.maneuverModifier)
+        val maneuver = CarManeuverConverter.toCarManeuver(
+            currentStep.maneuverType,
+            currentStep.maneuverModifier,
+            carContext = carContext
+        )
         val instruction = currentStep.instruction.ifBlank { "Route folgen" }
         val stepBuilder = Step.Builder(instruction)
             .setManeuver(maneuver)
@@ -271,7 +297,11 @@ class CarNavigationScreen(
             .setCurrentStep(stepBuilder.build(), stepDistObj)
 
         if (nextStep != null) {
-            val nextManeuver = CarManeuverConverter.toCarManeuver(nextStep.maneuverType, nextStep.maneuverModifier)
+            val nextManeuver = CarManeuverConverter.toCarManeuver(
+                nextStep.maneuverType,
+                nextStep.maneuverModifier,
+                carContext = carContext
+            )
             val nextInstruction = nextStep.instruction.ifBlank { "Route folgen" }
             val nextStepObj = Step.Builder(nextInstruction)
                 .setManeuver(nextManeuver)
@@ -320,14 +350,6 @@ class CarNavigationScreen(
                     }
                     .build()
             )
-            .addAction(
-                Action.Builder()
-                    .setTitle("Beenden")
-                    .setOnClickListener {
-                        endNavigation()
-                    }
-                    .build()
-            )
             .build()
 
         return NavigationTemplate.Builder()
@@ -342,5 +364,12 @@ class CarNavigationScreen(
         NavigationStateHolder.stopNavigation()
         surfaceRenderer.updateRoute(null)
         screenManager.pop()
+    }
+
+    companion object {
+        private const val OFF_ROUTE_THRESHOLD_METERS = 60f
+        private const val OFF_ROUTE_STRIKES_REQUIRED = 3
+        private const val RECALCULATE_COOLDOWN_MS = 10_000L
+        private const val ARRIVAL_THRESHOLD_METERS = 35f
     }
 }

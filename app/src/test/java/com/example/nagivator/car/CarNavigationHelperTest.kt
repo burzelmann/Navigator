@@ -104,5 +104,28 @@ class CarNavigationHelperTest {
         assertEquals(AppThemeMode.DARK, CarNavigationHelper.nextThemeMode(AppThemeMode.LIGHT))
         assertEquals(AppThemeMode.SYSTEM, CarNavigationHelper.nextThemeMode(AppThemeMode.DARK))
     }
+
+    @Test
+    fun distanceToPolyline_midpointOnLongStraightRoad_isNearZero() {
+        // Two vertices ~1.1 km apart along a straight north-south rural road
+        val p1 = LocationPoint(51.7000, 6.3000)
+        val p2 = LocationPoint(51.7100, 6.3000)
+        val midpoint = LocationPoint(51.7050, 6.3000)
+
+        val (dist, idx) = CarNavigationHelper.distanceToPolyline(midpoint, listOf(p1, p2))
+        assertEquals(0, idx)
+        assertTrue("Expected < 2m on segment midpoint, got $dist", dist < 2f)
+    }
+
+    @Test
+    fun distanceToPolyline_offRoutePoint_returnsPerpendicularDistance() {
+        val p1 = LocationPoint(51.7000, 6.3000)
+        val p2 = LocationPoint(51.7100, 6.3000)
+        // ~0.0015 deg lon at 51.7 deg lat is ~103 m east of the road
+        val offRoute = LocationPoint(51.7050, 6.3015)
+
+        val (dist, _) = CarNavigationHelper.distanceToPolyline(offRoute, listOf(p1, p2))
+        assertTrue("Expected ~103m off-route, got $dist", dist in 90f..120f)
+    }
 }
 

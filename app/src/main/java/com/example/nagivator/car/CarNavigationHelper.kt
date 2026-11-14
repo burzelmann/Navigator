@@ -143,6 +143,58 @@ object CarNavigationHelper {
     }
 
     /**
+     * Computes the shortest distance in meters from [loc] to any segment of [geometryPoints],
+     * returning `(distanceMeters, closestSegmentStartIndex)`.
+     *
+     * Projecting onto line segments (rather than measuring distance to vertices only) avoids false
+     * off-route triggers on long straight rural/forest roads where OSRM vertices are far apart.
+     */
+    fun distanceToPolyline(
+        loc: LocationPoint,
+        geometryPoints: List<LocationPoint>
+    ): Pair<Float, Int> {
+        if (geometryPoints.isEmpty()) return Pair(Float.MAX_VALUE, 0)
+        if (geometryPoints.size == 1) {
+            val d = haversineMeters(
+                loc.latitude, loc.longitude,
+                geometryPoints[0].latitude, geometryPoints[0].longitude
+            ).toFloat()
+            return Pair(d, 0)
+        }
+
+        val cosLat = cos(Math.toRadians(loc.latitude)).coerceAtLeast(0.01)
+        var minDist = Float.MAX_VALUE
+        var minIdx = 0
+
+        for (i in 0 until geometryPoints.size - 1) {
+            val a = geometryPoints[i]
+            val b = geometryPoints[i + 1]
+
+            // Local equirectangular projection relative to A
+            val bx = (b.longitude - a.longitude) * cosLat
+            val by = b.latitude - a.latitude
+            val px = (loc.longitude - a.longitude) * cosLat
+            val py = loc.latitude - a.latitude
+
+            val lenSq = bx * bx + by * by
+            val t = if (lenSq > 0.0) {
+                ((px * bx + py * by) / lenSq).coerceIn(0.0, 1.0)
+            } else {
+                0.0
+            }
+
+            val projLat = a.latitude + t * by
+            val projLon = a.longitude + t * (b.longitude - a.longitude)
+            val dist = haversineMeters(loc.latitude, loc.longitude, projLat, projLon).toFloat()
+            if (dist < minDist) {
+                minDist = dist
+                minIdx = i
+            }
+        }
+        return Pair(minDist, minIdx)
+    }
+
+    /**
      * Cycles through theme modes in the order SYSTEM -> LIGHT -> DARK -> SYSTEM.
      */
     fun nextThemeMode(current: AppThemeMode): AppThemeMode = when (current) {
