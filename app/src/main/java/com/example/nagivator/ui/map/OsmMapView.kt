@@ -10,11 +10,14 @@ import android.graphics.drawable.BitmapDrawable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.nagivator.data.local.entity.PoiEntity
+import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import org.osmdroid.config.Configuration
@@ -30,8 +33,6 @@ import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 import android.graphics.Path
 import androidx.compose.foundation.isSystemInDarkTheme
 
@@ -99,21 +100,13 @@ fun OsmMapView(
         }
     }
 
-    LaunchedEffect(isDarkTheme) {
-        if (isDarkTheme) {
-            // High-contrast, clean dark slate / charcoal color matrix (NO purple/pink!)
-            val matrix = ColorMatrix(
-                floatArrayOf(
-                    -0.2126f, -0.7152f, -0.0722f, 0f, 255f,
-                    -0.2126f, -0.7152f, -0.0722f, 0f, 255f,
-                    -0.2126f, -0.7152f, -0.0722f, 0f, 255f,
-                    0f,       0f,        0f,       1f, 0f
-                )
-            )
-            mapView.overlayManager.tilesOverlay.setColorFilter(ColorMatrixColorFilter(matrix))
-        } else {
-            mapView.overlayManager.tilesOverlay.setColorFilter(null)
-        }
+    val userSettings by remember {
+        UserSettingsRepository.getInstance(context).settings
+    }.collectAsState()
+
+    LaunchedEffect(isDarkTheme, userSettings.mapColorScheme) {
+        val filter = MapStyleHelper.createTileColorFilter(isDarkTheme, userSettings.mapColorScheme)
+        mapView.overlayManager.tilesOverlay.setColorFilter(filter)
         mapView.invalidate()
     }
 

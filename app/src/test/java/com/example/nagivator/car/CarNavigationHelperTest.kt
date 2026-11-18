@@ -127,5 +127,28 @@ class CarNavigationHelperTest {
         val (dist, _) = CarNavigationHelper.distanceToPolyline(offRoute, listOf(p1, p2))
         assertTrue("Expected ~103m off-route, got $dist", dist in 90f..120f)
     }
+
+    @Test
+    fun targetZoomForSpeed_appliesSpeedTiersAndHysteresis() {
+        assertEquals(17, CarNavigationHelper.targetZoomForSpeed(5.0f, 16)) // 18 km/h -> 17
+        assertEquals(16, CarNavigationHelper.targetZoomForSpeed(15.0f, 17)) // 54 km/h -> 16
+        assertEquals(15, CarNavigationHelper.targetZoomForSpeed(28.0f, 16)) // 100.8 km/h -> 15
+        // Deadband at 35 km/h (~9.7 m/s) preserves currentZoom
+        assertEquals(17, CarNavigationHelper.targetZoomForSpeed(9.7f, 17))
+        assertEquals(16, CarNavigationHelper.targetZoomForSpeed(9.7f, 16))
+    }
+
+    @Test
+    fun nextMapColorScheme_cyclesAllSchemes() {
+        val first = com.example.nagivator.data.repository.MapColorScheme.GRAPHITE
+        val second = CarNavigationHelper.nextMapColorScheme(first)
+        val third = CarNavigationHelper.nextMapColorScheme(second)
+        val fourth = CarNavigationHelper.nextMapColorScheme(third)
+        val back = CarNavigationHelper.nextMapColorScheme(fourth)
+        assertEquals(com.example.nagivator.data.repository.MapColorScheme.MIDNIGHT_BLUE, second)
+        assertEquals(com.example.nagivator.data.repository.MapColorScheme.WARM_AMBER, third)
+        assertEquals(com.example.nagivator.data.repository.MapColorScheme.HIGH_CONTRAST, fourth)
+        assertEquals(first, back)
+    }
 }
 

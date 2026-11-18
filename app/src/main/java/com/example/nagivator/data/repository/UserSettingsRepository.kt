@@ -2,6 +2,7 @@ package com.example.nagivator.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.domain.model.SpeedPreference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,10 +15,20 @@ enum class AppThemeMode(val label: String) {
     DARK("Immer dunkel")
 }
 
+enum class MapColorScheme(val label: String, val description: String) {
+    GRAPHITE("Graphit", "Neutrales Dunkelgrau"),
+    MIDNIGHT_BLUE("Mitternachtsblau", "Tiefes Blau für Nachtfahrten"),
+    WARM_AMBER("Warm-Bernstein", "Augenschonend, wenig Blauanteil"),
+    HIGH_CONTRAST("Hochkontrast", "Maximale Straßenerkennung")
+}
+
 data class UserSettings(
     val footSpeed: SpeedPreference = SpeedPreference.NORMAL,
     val carSpeed: SpeedPreference = SpeedPreference.NORMAL,
-    val themeMode: AppThemeMode = AppThemeMode.SYSTEM
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    val mapColorScheme: MapColorScheme = MapColorScheme.GRAPHITE,
+    val carMapPerspective: MapPerspective = MapPerspective.NORTH_UP,
+    val dynamicZoomEnabled: Boolean = true
 )
 
 class UserSettingsRepository private constructor(context: Context) : SharedPreferences.OnSharedPreferenceChangeListener {
@@ -38,6 +49,9 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val footName = prefs.getString("foot_speed", SpeedPreference.NORMAL.name)
         val carName = prefs.getString("car_speed", SpeedPreference.NORMAL.name)
         val themeName = prefs.getString("theme_mode", AppThemeMode.SYSTEM.name)
+        val schemeName = prefs.getString("map_color_scheme", MapColorScheme.GRAPHITE.name)
+        val perspectiveName = prefs.getString("car_map_perspective", MapPerspective.NORTH_UP.name)
+        val dynamicZoom = prefs.getBoolean("dynamic_zoom_enabled", true)
 
         val foot = try {
             SpeedPreference.valueOf(footName ?: SpeedPreference.NORMAL.name)
@@ -57,7 +71,26 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             AppThemeMode.SYSTEM
         }
 
-        return UserSettings(footSpeed = foot, carSpeed = car, themeMode = theme)
+        val scheme = try {
+            MapColorScheme.valueOf(schemeName ?: MapColorScheme.GRAPHITE.name)
+        } catch (_: Exception) {
+            MapColorScheme.GRAPHITE
+        }
+
+        val perspective = try {
+            MapPerspective.valueOf(perspectiveName ?: MapPerspective.NORTH_UP.name)
+        } catch (_: Exception) {
+            MapPerspective.NORTH_UP
+        }
+
+        return UserSettings(
+            footSpeed = foot,
+            carSpeed = car,
+            themeMode = theme,
+            mapColorScheme = scheme,
+            carMapPerspective = perspective,
+            dynamicZoomEnabled = dynamicZoom
+        )
     }
 
     fun setFootSpeed(pref: SpeedPreference) {
@@ -73,6 +106,21 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     fun setThemeMode(mode: AppThemeMode) {
         prefs.edit().putString("theme_mode", mode.name).apply()
         _settings.update { it.copy(themeMode = mode) }
+    }
+
+    fun setMapColorScheme(scheme: MapColorScheme) {
+        prefs.edit().putString("map_color_scheme", scheme.name).apply()
+        _settings.update { it.copy(mapColorScheme = scheme) }
+    }
+
+    fun setCarMapPerspective(perspective: MapPerspective) {
+        prefs.edit().putString("car_map_perspective", perspective.name).apply()
+        _settings.update { it.copy(carMapPerspective = perspective) }
+    }
+
+    fun setDynamicZoomEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("dynamic_zoom_enabled", enabled).apply()
+        _settings.update { it.copy(dynamicZoomEnabled = enabled) }
     }
 
     companion object {

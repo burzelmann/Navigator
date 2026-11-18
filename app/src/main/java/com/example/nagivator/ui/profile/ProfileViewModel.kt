@@ -3,6 +3,7 @@ package com.example.nagivator.ui.profile
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.data.repository.UserSettings
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.SpeedPreference
@@ -22,5 +23,13 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     fun setThemeMode(mode: AppThemeMode) {
         userSettingsRepository.setThemeMode(mode)
+    }
+
+    fun setMapColorScheme(scheme: MapColorScheme) {
+        userSettingsRepository.setMapColorScheme(scheme)
+    }
+
+    fun setDynamicZoomEnabled(enabled: Boolean) {
+        userSettingsRepository.setDynamicZoomEnabled(enabled)
     }
 }

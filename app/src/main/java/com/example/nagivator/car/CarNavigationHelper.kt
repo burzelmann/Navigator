@@ -2,6 +2,7 @@ package com.example.nagivator.car
 
 import androidx.car.app.model.Distance
 import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.RouteStep
@@ -201,6 +202,27 @@ object CarNavigationHelper {
         AppThemeMode.SYSTEM -> AppThemeMode.LIGHT
         AppThemeMode.LIGHT -> AppThemeMode.DARK
         AppThemeMode.DARK -> AppThemeMode.SYSTEM
+    }
+
+    /**
+     * Cycles through night map color schemes.
+     */
+    fun nextMapColorScheme(current: MapColorScheme): MapColorScheme {
+        val entries = MapColorScheme.entries
+        return entries[(entries.indexOf(current) + 1) % entries.size]
+    }
+
+    /**
+     * Computes speed-dependent target zoom level (15..17) with hysteresis deadbands to avoid oscillation.
+     */
+    fun targetZoomForSpeed(speedMps: Float, currentZoom: Int): Int {
+        val kmh = speedMps * 3.6f
+        return when {
+            kmh < 32f -> 17
+            kmh in 38f..78f -> 16
+            kmh > 85f -> 15
+            else -> currentZoom.coerceIn(15, 17)
+        }
     }
 }
 

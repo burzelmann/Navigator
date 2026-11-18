@@ -63,8 +63,8 @@
   - Dreifach-Toggle für Erscheinungsbild (*System*, *Immer hell*, *Immer dunkel*).
 
 - 🚗 **Android Auto Integration:**
-  - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel sowie Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
-  - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Kartenausrichtung und Sprachausgabe.
+  - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel, 4 wählbare Nacht-Farbschemata (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast*), geschwindigkeitsabhängiger dynamischer Auto-Zoom sowie persistente Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
+  - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Nacht-Farbschema, Kartenausrichtung, Auto-Zoom und Sprachausgabe.
   - **Suche & Favoriten:** Direkte Zielsuche über die Auto-Tastatur sowie Ein-Klick-Routenstart aus gespeicherten Favoriten.
   - **Turn-by-Turn-Routenführung:** Blaue Manöver-Karte mit Vektor-Pfeilen, nächstem Schritt, Live-ETA/Reststrecke, automatischer Zielankunft und stabiler Off-Route-Erkennung (Segment-Projektion + 3-fach-Hysterese & Cooldown gegen Fehl-Neuberechnungen auf Wald-/Überlandstrecken).
 
@@ -142,7 +142,7 @@ com.example.nagivator
 └── ui
     ├── components       # Wiederverwendbare UI-Komponenten (ElevationProfileView, IconPicker)
     ├── favorites        # Favoriten-Tab (FavoritesScreen, FavoritesViewModel)
-    ├── map              # Hauptkarte & Navigation (MapScreen, MapViewModel, OsmMapView, NavigationView, RoutePlannerCard)
+    ├── map              # Hauptkarte & Navigation (MapScreen, MapViewModel, OsmMapView, MapStyleHelper, NavigationView, RoutePlannerCard)
     ├── profile          # Profil- & Einstellungen-Tab (ProfileScreen, ProfileViewModel)
     └── theme            # Material 3 Nagivator Theme
 

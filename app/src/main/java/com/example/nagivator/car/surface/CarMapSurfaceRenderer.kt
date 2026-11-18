@@ -2,8 +2,6 @@ package com.example.nagivator.car.surface
 
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
@@ -20,6 +18,7 @@ import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
+import com.example.nagivator.ui.map.MapStyleHelper
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.ln
@@ -37,10 +36,11 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     private var surfaceHeight = 480
     private var visibleArea: Rect? = null
 
+    private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
     private var currentZoom = 16
     @Volatile
-    private var perspective: MapPerspective = MapPerspective.NORTH_UP
-    private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
+    private var perspective: MapPerspective = userSettingsRepository.settings.value.carMapPerspective
+    private var manualZoomPauseUntilMs = 0L
 
     private var startLocation: LocationPoint? = null
     private var targetLocation: LocationPoint? = null
@@ -84,16 +84,6 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
 
     // Paints
     private val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val darkFilter = ColorMatrixColorFilter(
-        ColorMatrix(
-            floatArrayOf(
-                -0.2126f, -0.7152f, -0.0722f, 0f, 255f,
-                -0.2126f, -0.7152f, -0.0722f, 0f, 255f,
-                -0.2126f, -0.7152f, -0.0722f, 0f, 255f,
-                0f,        0f,        0f,       1f, 0f
-            )
-        )
-    )
 
     private val routeHaloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -161,6 +151,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
         } else {
             MapPerspective.NORTH_UP
         }
+        userSettingsRepository.setCarMapPerspective(perspective)
         requestRender()
         return perspective
     }
@@ -168,6 +159,10 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     fun updateLocation(point: LocationPoint) {
         renderHandler.post {
             val stabilized = CarNavigationHelper.preserveBearingIfStationary(targetLocation, point)
+            val settings = userSettingsRepository.settings.value
+            if (settings.dynamicZoomEnabled && SystemClock.uptimeMillis() > manualZoomPauseUntilMs) {
+                currentZoom = CarNavigationHelper.targetZoomForSpeed(stabilized.speedMps, currentZoom)
+            }
             val current = renderedLocation
             if (current == null || !isFollowLocation) {
                 startLocation = stabilized
@@ -197,6 +192,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     fun zoomIn() {
         if (currentZoom < 18) {
             currentZoom++
+            manualZoomPauseUntilMs = SystemClock.uptimeMillis() + 15_000L
             requestRender()
         }
     }
@@ -204,12 +200,14 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     fun zoomOut() {
         if (currentZoom > 11) {
             currentZoom--
+            manualZoomPauseUntilMs = SystemClock.uptimeMillis() + 15_000L
             requestRender()
         }
     }
 
     fun centerOnLocation() {
         isFollowLocation = true
+        manualZoomPauseUntilMs = 0L
         requestRender()
     }
 
@@ -237,12 +235,14 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
         } ?: return
 
         try {
-            val isDark = when (userSettingsRepository.settings.value.themeMode) {
+            val settings = userSettingsRepository.settings.value
+            val isDark = when (settings.themeMode) {
                 AppThemeMode.SYSTEM -> carContext.isDarkMode
                 AppThemeMode.LIGHT -> false
                 AppThemeMode.DARK -> true
             }
-            canvas.drawColor(if (isDark) Color.parseColor("#12161A") else Color.parseColor("#EBF2F5"))
+            val scheme = settings.mapColorScheme
+            canvas.drawColor(MapStyleHelper.canvasBackgroundColor(isDark, scheme))
 
             val loc = renderedLocation ?: targetLocation ?: LocationPoint(52.5200, 13.4050, "Berlin")
             val centerLat = loc.latitude
@@ -266,7 +266,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
             val centerTy = latToTileY(centerLat, zoom)
 
             // 1. Render Map Tiles (expanded bounds for rotated HEADING_UP view)
-            tilePaint.colorFilter = if (isDark) darkFilter else null
+            tilePaint.colorFilter = MapStyleHelper.createTileColorFilter(isDark, scheme)
 
             val maxDx = maxOf(pivotX, width - pivotX)
             val maxDy = maxOf(pivotY, height - pivotY)

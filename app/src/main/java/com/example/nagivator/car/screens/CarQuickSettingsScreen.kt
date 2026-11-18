@@ -24,7 +24,10 @@ class CarQuickSettingsScreen(
     private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
 
     override fun onGetTemplate(): Template {
-        val currentTheme = userSettingsRepository.settings.value.themeMode
+        val settings = userSettingsRepository.settings.value
+        val currentTheme = settings.themeMode
+        val currentScheme = settings.mapColorScheme
+        val dynamicZoom = settings.dynamicZoomEnabled
         val currentPerspective = surfaceRenderer.getPerspective()
         val isMuted = NavigationStateHolder.isMuted.value
 
@@ -43,12 +46,34 @@ class CarQuickSettingsScreen(
             )
             .addItem(
                 Row.Builder()
+                    .setTitle("Nachtschema: ${currentScheme.label}")
+                    .addText(currentScheme.description)
+                    .setOnClickListener {
+                        val nextScheme = CarNavigationHelper.nextMapColorScheme(currentScheme)
+                        userSettingsRepository.setMapColorScheme(nextScheme)
+                        surfaceRenderer.requestRender()
+                        invalidate()
+                    }
+                    .build()
+            )
+            .addItem(
+                Row.Builder()
                     .setTitle(
                         "Kartenansicht: ${if (currentPerspective == MapPerspective.HEADING_UP) "Fahrtrichtung oben" else "Norden oben"}"
                     )
-                    .addText("Tippen zum Umschalten")
+                    .addText("Wird für künftige Fahrten gespeichert")
                     .setOnClickListener {
                         surfaceRenderer.togglePerspective()
+                        invalidate()
+                    }
+                    .build()
+            )
+            .addItem(
+                Row.Builder()
+                    .setTitle("Auto-Zoom: ${if (dynamicZoom) "Aktiv" else "Aus"}")
+                    .addText("Passt Zoom automatisch an Geschwindigkeit an")
+                    .setOnClickListener {
+                        userSettingsRepository.setDynamicZoomEnabled(!dynamicZoom)
                         invalidate()
                     }
                     .build()
