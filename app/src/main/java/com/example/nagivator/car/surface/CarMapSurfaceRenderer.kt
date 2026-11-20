@@ -16,6 +16,7 @@ import androidx.car.app.SurfaceContainer
 import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.UserSettingsRepository
+import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.ui.map.MapStyleHelper
@@ -161,7 +162,24 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
             val stabilized = CarNavigationHelper.preserveBearingIfStationary(targetLocation, point)
             val settings = userSettingsRepository.settings.value
             if (settings.dynamicZoomEnabled && SystemClock.uptimeMillis() > manualZoomPauseUntilMs) {
-                currentZoom = CarNavigationHelper.targetZoomForSpeed(stabilized.speedMps, currentZoom)
+                val route = activeRoute
+                val stepIdx = NavigationStateHolder.currentStepIndex.value
+                val step = if (route != null && stepIdx in route.steps.indices) route.steps[stepIdx] else null
+                val maneuverLoc = step?.maneuverLocation
+                val distMeters = if (maneuverLoc != null) {
+                    CarNavigationHelper.haversineMeters(
+                        stabilized.latitude, stabilized.longitude,
+                        maneuverLoc.latitude, maneuverLoc.longitude
+                    )
+                } else {
+                    null
+                }
+                currentZoom = CarNavigationHelper.targetZoomForNavigation(
+                    speedMps = stabilized.speedMps,
+                    currentZoom = currentZoom,
+                    maneuverType = step?.maneuverType,
+                    distanceToManeuverMeters = distMeters
+                )
             }
             val current = renderedLocation
             if (current == null || !isFollowLocation) {

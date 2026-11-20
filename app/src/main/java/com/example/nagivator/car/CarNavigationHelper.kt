@@ -224,5 +224,36 @@ object CarNavigationHelper {
             else -> currentZoom.coerceIn(15, 17)
         }
     }
+
+    /**
+     * Combines speed-based zoom with maneuver-approach zoom-in so junctions, roundabouts,
+     * highway interchanges (fork/ramp/merge), and turns are shown in high detail.
+     */
+    fun targetZoomForNavigation(
+        speedMps: Float,
+        currentZoom: Int,
+        maneuverType: String?,
+        distanceToManeuverMeters: Double?
+    ): Int {
+        val baseZoom = targetZoomForSpeed(speedMps, currentZoom)
+        val typeNorm = maneuverType?.lowercase()?.trim() ?: return baseZoom
+        val dist = distanceToManeuverMeters ?: return baseZoom
+        if (dist < 0.0) return baseZoom
+
+        val isComplexJunction = typeNorm in setOf(
+            "roundabout", "rotary", "roundabout_exit",
+            "fork", "off ramp", "on ramp", "merge"
+        )
+        val isTurn = typeNorm in setOf("turn", "end of road", "uturn")
+
+        val maneuverZoom = when {
+            isComplexJunction && dist <= 120.0 -> 18
+            isComplexJunction && dist <= 280.0 -> 17
+            isComplexJunction && dist <= 550.0 -> 16
+            isTurn && dist <= 220.0 -> 17
+            else -> baseZoom
+        }
+        return maxOf(baseZoom, maneuverZoom)
+    }
 }
 

@@ -150,5 +150,17 @@ class CarNavigationHelperTest {
         assertEquals(com.example.nagivator.data.repository.MapColorScheme.HIGH_CONTRAST, fourth)
         assertEquals(first, back)
     }
+
+    @Test
+    fun targetZoomForNavigation_zoomsInBeforeRoundaboutsJunctionsAndTurns() {
+        // Highway speed (108 km/h = 30 m/s) -> base zoom 15
+        assertEquals(15, CarNavigationHelper.targetZoomForNavigation(30f, 15, "turn", 900.0))
+        // Complex junction (fork / off ramp / roundabout) zooms in early: 16 at 450m, 17 at 200m, 18 at 100m
+        assertEquals(16, CarNavigationHelper.targetZoomForNavigation(30f, 15, "fork", 450.0))
+        assertEquals(17, CarNavigationHelper.targetZoomForNavigation(30f, 16, "off ramp", 200.0))
+        assertEquals(18, CarNavigationHelper.targetZoomForNavigation(16f, 17, "roundabout", 90.0))
+        // Regular turn within 220m zooms to at least 17 even at rural speed (60 km/h)
+        assertEquals(17, CarNavigationHelper.targetZoomForNavigation(16.6f, 16, "turn", 180.0))
+    }
 }
 
