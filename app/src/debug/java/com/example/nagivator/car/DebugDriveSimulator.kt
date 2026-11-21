@@ -93,6 +93,21 @@ object DebugDriveSimulator {
         }
     }
 
+    fun teleport(lat: Double, lon: Double, speedMps: Float = 11.1f) {
+        stop()
+        NavigationStateHolder.setSimulatedLocationActive(true)
+        NavigationStateHolder.updateLocation(
+            LocationPoint(
+                latitude = lat,
+                longitude = lon,
+                name = "Debug Teleport",
+                bearing = 0f,
+                speedMps = speedMps
+            ),
+            isSimulated = true
+        )
+    }
+
     fun stop() {
         simJob?.cancel()
         simJob = null

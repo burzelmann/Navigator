@@ -17,6 +17,7 @@ import com.example.nagivator.R
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.LocationRepository
+import com.example.nagivator.data.repository.RoadContextRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import kotlinx.coroutines.Job
@@ -27,8 +28,11 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
 
     val surfaceRenderer = CarMapSurfaceRenderer(carContext)
     private val locationRepository = LocationRepository(carContext)
+    private val roadContextRepository = RoadContextRepository()
     private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
     private var locationJob: Job? = null
+    private var roadContextJob: Job? = null
+    private var roadFetchJob: Job? = null
     private var routeJob: Job? = null
     private var themeJob: Job? = null
 
@@ -47,10 +51,19 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
         }
 
         // Render any location updates (real GPS or debug simulation) on the car map surface
-        lifecycleScope.launch {
+        roadContextJob = lifecycleScope.launch {
             NavigationStateHolder.currentLocation.collectLatest { point ->
                 if (point != null) {
                     surfaceRenderer.updateLocation(point)
+                    if (roadFetchJob?.isActive != true) {
+                        roadFetchJob = lifecycleScope.launch {
+                            val snapshot = roadContextRepository.fetchAround(point.latitude, point.longitude)
+                            if (snapshot != null) {
+                                NavigationStateHolder.updateRoadContext(snapshot.speedLimitKmh, snapshot.signals)
+                                surfaceRenderer.requestRender()
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -77,6 +90,8 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
 
     override fun onDestroy(owner: LifecycleOwner) {
         locationJob?.cancel()
+        roadContextJob?.cancel()
+        roadFetchJob?.cancel()
         routeJob?.cancel()
         themeJob?.cancel()
         surfaceRenderer.destroy()

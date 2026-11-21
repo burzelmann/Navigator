@@ -65,6 +65,7 @@ interface RoutingApi {
         @Query("overview") overview: String = "full",
         @Query("geometries") geometries: String = "geojson",
         @Query("steps") steps: Boolean = true,
+        @Query("alternatives") alternatives: Boolean = false,
         @Query("continue_straight") continueStraight: Boolean = false,
         @Query("radiuses") radiuses: String? = null
     ): OsrmResponse

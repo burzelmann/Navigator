@@ -28,7 +28,8 @@ data class UserSettings(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val mapColorScheme: MapColorScheme = MapColorScheme.GRAPHITE,
     val carMapPerspective: MapPerspective = MapPerspective.NORTH_UP,
-    val dynamicZoomEnabled: Boolean = true
+    val dynamicZoomEnabled: Boolean = true,
+    val showRoadSignals: Boolean = true
 )
 
 class UserSettingsRepository private constructor(context: Context) : SharedPreferences.OnSharedPreferenceChangeListener {
@@ -52,6 +53,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val schemeName = prefs.getString("map_color_scheme", MapColorScheme.GRAPHITE.name)
         val perspectiveName = prefs.getString("car_map_perspective", MapPerspective.NORTH_UP.name)
         val dynamicZoom = prefs.getBoolean("dynamic_zoom_enabled", true)
+        val showRoadSignals = prefs.getBoolean("show_road_signals", true)
 
         val foot = try {
             SpeedPreference.valueOf(footName ?: SpeedPreference.NORMAL.name)
@@ -89,7 +91,8 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             themeMode = theme,
             mapColorScheme = scheme,
             carMapPerspective = perspective,
-            dynamicZoomEnabled = dynamicZoom
+            dynamicZoomEnabled = dynamicZoom,
+            showRoadSignals = showRoadSignals
         )
     }
 
@@ -121,6 +124,11 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     fun setDynamicZoomEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("dynamic_zoom_enabled", enabled).apply()
         _settings.update { it.copy(dynamicZoomEnabled = enabled) }
+    }
+
+    fun setShowRoadSignals(enabled: Boolean) {
+        prefs.edit().putBoolean("show_road_signals", enabled).apply()
+        _settings.update { it.copy(showRoadSignals = enabled) }
     }
 
     companion object {

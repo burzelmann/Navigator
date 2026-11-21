@@ -18,8 +18,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.nagivator.data.local.entity.PoiEntity
 import com.example.nagivator.data.repository.UserSettingsRepository
+import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
+import com.example.nagivator.domain.model.RoadSignal
+import com.example.nagivator.domain.model.RoadSignalType
 import com.example.nagivator.domain.model.RouteResult
+import com.example.nagivator.domain.model.TrafficIncident
+import com.example.nagivator.domain.model.TrafficIncidentType
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.XYTileSource
@@ -98,6 +103,9 @@ fun OsmMapView(
 
     // Location Pulse Overlay - drawn natively on Canvas
     val locationPulseOverlay = remember { LocationPulseOverlay() }
+    val roadSignalsOverlay = remember { RoadSignalsOverlay() }
+    val roadSignals by NavigationStateHolder.roadSignals.collectAsState()
+    val trafficIncidents by NavigationStateHolder.activeTrafficIncidents.collectAsState()
 
     val mapView = remember {
         MapView(context).apply {
@@ -143,9 +151,17 @@ fun OsmMapView(
     }
 
     locationPulseOverlay.currentLocation = currentLocation
+    roadSignalsOverlay.signals = if (userSettings.showRoadSignals) roadSignals else emptyList()
+    roadSignalsOverlay.incidents = trafficIncidents
     if (locationPulseOverlay.azimuthDegrees != azimuthDegrees) {
         locationPulseOverlay.azimuthDegrees = azimuthDegrees
         mapView.postInvalidate()
+    }
+    LaunchedEffect(roadSignals, trafficIncidents, userSettings.showRoadSignals) {
+        if (!mapView.overlays.contains(roadSignalsOverlay)) {
+            mapView.overlays.add(roadSignalsOverlay)
+        }
+        mapView.invalidate()
     }
 
     LaunchedEffect(mapView) {
@@ -275,6 +291,83 @@ fun OsmMapView(
         modifier = modifier,
         factory = { mapView }
     )
+}
+
+/**
+ * Draws prominent OSM road signals (traffic lights, stop signs, give-way, roundabouts)
+ * and Autobahn traffic incidents natively on the osmdroid Canvas.
+ */
+private class RoadSignalsOverlay : Overlay() {
+    var signals: List<RoadSignal> = emptyList()
+    var incidents: List<TrafficIncident> = emptyList()
+
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val screenPt = Point()
+
+    override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+        if (shadow) return
+        if (mapView.zoomLevelDouble >= 14.5) {
+            for (sig in signals) {
+                mapView.projection.toPixels(GeoPoint(sig.latitude, sig.longitude), screenPt)
+                val x = screenPt.x.toFloat()
+                val y = screenPt.y.toFloat()
+                when (sig.type) {
+                    RoadSignalType.TRAFFIC_SIGNALS -> {
+                        fillPaint.color = Color.parseColor("#1E2228")
+                        canvas.drawRoundRect(x - 7f, y - 14f, x + 7f, y + 14f, 4f, 4f, fillPaint)
+                        fillPaint.color = Color.parseColor("#FF3B30")
+                        canvas.drawCircle(x, y - 8f, 3f, fillPaint)
+                        fillPaint.color = Color.parseColor("#FFCC00")
+                        canvas.drawCircle(x, y, 3f, fillPaint)
+                        fillPaint.color = Color.parseColor("#34C759")
+                        canvas.drawCircle(x, y + 8f, 3f, fillPaint)
+                    }
+                    RoadSignalType.STOP -> {
+                        fillPaint.color = Color.parseColor("#D32F2F")
+                        canvas.drawCircle(x, y, 11f, fillPaint)
+                        strokePaint.color = Color.WHITE
+                        strokePaint.strokeWidth = 2f
+                        canvas.drawCircle(x, y, 11f, strokePaint)
+                    }
+                    RoadSignalType.GIVE_WAY -> {
+                        val tri = Path().apply {
+                            moveTo(x - 11f, y - 8f)
+                            lineTo(x + 11f, y - 8f)
+                            lineTo(x, y + 11f)
+                            close()
+                        }
+                        fillPaint.color = Color.WHITE
+                        canvas.drawPath(tri, fillPaint)
+                        strokePaint.color = Color.parseColor("#D32F2F")
+                        strokePaint.strokeWidth = 3f
+                        canvas.drawPath(tri, strokePaint)
+                    }
+                    RoadSignalType.ROUNDABOUT -> {
+                        fillPaint.color = Color.parseColor("#1565C0")
+                        canvas.drawCircle(x, y, 11f, fillPaint)
+                        strokePaint.color = Color.WHITE
+                        strokePaint.strokeWidth = 2.4f
+                        canvas.drawCircle(x, y, 5.5f, strokePaint)
+                    }
+                }
+            }
+        }
+        for (inc in incidents) {
+            mapView.projection.toPixels(GeoPoint(inc.latitude, inc.longitude), screenPt)
+            val x = screenPt.x.toFloat()
+            val y = screenPt.y.toFloat()
+            fillPaint.color = if (inc.type == TrafficIncidentType.CLOSURE || inc.isBlocked) {
+                Color.parseColor("#D32F2F")
+            } else {
+                Color.parseColor("#FFC107")
+            }
+            canvas.drawCircle(x, y, 13f, fillPaint)
+            strokePaint.color = Color.WHITE
+            strokePaint.strokeWidth = 2.5f
+            canvas.drawCircle(x, y, 13f, strokePaint)
+        }
+    }
 }
 
 /**

@@ -2,8 +2,10 @@ package com.example.nagivator.data.repository
 
 import android.location.Location
 import android.util.Log
+import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.data.remote.BRouterApi
 import com.example.nagivator.data.remote.GeocodingApi
+import com.example.nagivator.data.remote.OsrmRoute
 import com.example.nagivator.data.remote.RoutingApi
 import com.example.nagivator.domain.model.GermanManeuverTranslator
 import com.example.nagivator.domain.model.LocationPoint
@@ -86,47 +88,7 @@ class RoutingRepository {
                 )
                 val firstRoute = response.routes.firstOrNull()
                 if (firstRoute != null) {
-                    val geomPoints = firstRoute.geometry?.coordinates?.map { coord ->
-                        LocationPoint(latitude = coord[1], longitude = coord[0])
-                    } ?: emptyList()
-
-                    val steps = firstRoute.legs.flatMap { leg ->
-                        leg.steps.map { step ->
-                            val maneuverName = GermanManeuverTranslator.translate(
-                                type = step.maneuver?.type ?: "",
-                                modifier = step.maneuver?.modifier ?: "",
-                                rawName = step.name
-                            )
-                            val maneuverLocCoords = step.maneuver?.location
-                            val maneuverPoint = if (maneuverLocCoords != null && maneuverLocCoords.size >= 2) {
-                                LocationPoint(latitude = maneuverLocCoords[1], longitude = maneuverLocCoords[0])
-                            } else null
-
-                            RouteStep(
-                                instruction = maneuverName,
-                                distanceMeters = step.distance,
-                                durationSeconds = step.duration,
-                                maneuverType = step.maneuver?.type ?: "",
-                                maneuverModifier = step.maneuver?.modifier ?: "",
-                                maneuverLocation = maneuverPoint
-                            )
-                        }
-                    }
-
-                    val calcDur = if (mode == TravelMode.FOOT) {
-                        firstRoute.distance / footSpeedPref.footSpeedMps
-                    } else {
-                        firstRoute.duration * carSpeedPref.carTimeFactor
-                    }
-
-                    return@runCatching RouteResult(
-                        waypoints = waypoints,
-                        geometryPoints = geomPoints,
-                        totalDistanceMeters = firstRoute.distance,
-                        totalDurationSeconds = calcDur,
-                        mode = mode,
-                        steps = steps
-                    )
+                    return@runCatching parseOsrmRoute(firstRoute, waypoints, mode, footSpeedPref, carSpeedPref)
                 }
             } catch (_: Exception) {
                 // proceed to fallback
@@ -134,6 +96,133 @@ class RoutingRepository {
 
             // 3. Fail-safe Geodesic fallback
             getGeodesicFallbackRoute(waypoints, mode, footSpeedPref, carSpeedPref)
+        }
+    }
+
+    /**
+     * Attempts to compute an alternative driving route that avoids [blockedPoint] (e.g. an Autobahn closure).
+     * First evaluates OSRM `alternatives=true`; if all alternatives pass the closure, computes a lateral detour via-point.
+     */
+    suspend fun getAlternativeRouteAvoiding(
+        waypoints: List<LocationPoint>,
+        blockedPoint: LocationPoint,
+        mode: TravelMode = TravelMode.CAR,
+        carSpeedPref: SpeedPreference = SpeedPreference.NORMAL,
+        avoidanceRadiusMeters: Float = 220f
+    ): Result<RouteResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (waypoints.size < 2) throw IllegalArgumentException("Mindestens 2 Wegpunkte erforderlich")
+            val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
+            val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+
+            // 1. Try OSRM alternatives=true
+            val response = routingApi.getRoute(
+                profile = osrmProfile,
+                coordinates = coordsStr,
+                alternatives = true
+            )
+            val parsedAlternatives = response.routes.map {
+                parseOsrmRoute(it, waypoints, mode, SpeedPreference.NORMAL, carSpeedPref)
+            }
+            val cleanAlternative = selectRouteAvoidingPoint(parsedAlternatives, blockedPoint, avoidanceRadiusMeters)
+            if (cleanAlternative != null) {
+                return@runCatching cleanAlternative
+            }
+
+            // 2. Fallback: lateral detour via-point (~3.5 km perpendicular to start->dest at blockedPoint)
+            val start = waypoints.first()
+            val dest = waypoints.last()
+            val detourVia = computeDetourViaPoint(start, dest, blockedPoint)
+            val detourWaypoints = listOf(start, detourVia, dest)
+            val detourCoords = detourWaypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+            val detourResp = routingApi.getRoute(profile = osrmProfile, coordinates = detourCoords)
+            val detourRoute = detourResp.routes.firstOrNull()
+                ?: throw IllegalStateException("Keine Ausweichroute verfügbar")
+            parseOsrmRoute(detourRoute, detourWaypoints, mode, SpeedPreference.NORMAL, carSpeedPref)
+        }
+    }
+
+    private fun parseOsrmRoute(
+        osrmRoute: OsrmRoute,
+        waypoints: List<LocationPoint>,
+        mode: TravelMode,
+        footSpeedPref: SpeedPreference,
+        carSpeedPref: SpeedPreference
+    ): RouteResult {
+        val geomPoints = osrmRoute.geometry?.coordinates?.map { coord ->
+            LocationPoint(latitude = coord[1], longitude = coord[0])
+        } ?: emptyList()
+
+        val steps = osrmRoute.legs.flatMap { leg ->
+            leg.steps.map { step ->
+                val maneuverName = GermanManeuverTranslator.translate(
+                    type = step.maneuver?.type ?: "",
+                    modifier = step.maneuver?.modifier ?: "",
+                    rawName = step.name
+                )
+                val maneuverLocCoords = step.maneuver?.location
+                val maneuverPoint = if (maneuverLocCoords != null && maneuverLocCoords.size >= 2) {
+                    LocationPoint(latitude = maneuverLocCoords[1], longitude = maneuverLocCoords[0])
+                } else null
+
+                RouteStep(
+                    instruction = maneuverName,
+                    distanceMeters = step.distance,
+                    durationSeconds = step.duration,
+                    maneuverType = step.maneuver?.type ?: "",
+                    maneuverModifier = step.maneuver?.modifier ?: "",
+                    maneuverLocation = maneuverPoint
+                )
+            }
+        }
+
+        val calcDur = if (mode == TravelMode.FOOT) {
+            osrmRoute.distance / footSpeedPref.footSpeedMps
+        } else {
+            osrmRoute.duration * carSpeedPref.carTimeFactor
+        }
+
+        return RouteResult(
+            waypoints = waypoints,
+            geometryPoints = geomPoints,
+            totalDistanceMeters = osrmRoute.distance,
+            totalDurationSeconds = calcDur,
+            mode = mode,
+            steps = steps
+        )
+    }
+
+    companion object {
+        fun selectRouteAvoidingPoint(
+            candidates: List<RouteResult>,
+            blockedPoint: LocationPoint,
+            avoidanceRadiusMeters: Float = 220f
+        ): RouteResult? {
+            return candidates
+                .filter { route ->
+                    route.geometryPoints.size >= 2 &&
+                        CarNavigationHelper.distanceToPolyline(blockedPoint, route.geometryPoints).first > avoidanceRadiusMeters
+                }
+                .minByOrNull { it.totalDurationSeconds }
+        }
+
+        fun computeDetourViaPoint(
+            start: LocationPoint,
+            dest: LocationPoint,
+            blocked: LocationPoint,
+            offsetDeg: Double = 0.032
+        ): LocationPoint {
+            val dLat = dest.latitude - start.latitude
+            val dLon = dest.longitude - start.longitude
+            val len = kotlin.math.hypot(dLat, dLon).coerceAtLeast(1e-5)
+            // Perpendicular unit vector
+            val perpLat = -dLon / len
+            val perpLon = dLat / len
+            return LocationPoint(
+                latitude = blocked.latitude + perpLat * offsetDeg,
+                longitude = blocked.longitude + perpLon * offsetDeg,
+                name = "Ausweichpunkt"
+            )
         }
     }
 

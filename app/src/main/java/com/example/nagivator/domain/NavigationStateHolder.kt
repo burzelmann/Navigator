@@ -1,7 +1,9 @@
 package com.example.nagivator.domain
 
 import com.example.nagivator.domain.model.LocationPoint
+import com.example.nagivator.domain.model.RoadSignal
 import com.example.nagivator.domain.model.RouteResult
+import com.example.nagivator.domain.model.TrafficIncident
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,15 @@ object NavigationStateHolder {
 
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
+
+    private val _currentSpeedLimitKmh = MutableStateFlow<Int?>(null)
+    val currentSpeedLimitKmh: StateFlow<Int?> = _currentSpeedLimitKmh.asStateFlow()
+
+    private val _roadSignals = MutableStateFlow<List<RoadSignal>>(emptyList())
+    val roadSignals: StateFlow<List<RoadSignal>> = _roadSignals.asStateFlow()
+
+    private val _activeTrafficIncidents = MutableStateFlow<List<TrafficIncident>>(emptyList())
+    val activeTrafficIncidents: StateFlow<List<TrafficIncident>> = _activeTrafficIncidents.asStateFlow()
 
     @Volatile
     private var isSimulatedLocationActive = false
@@ -52,9 +63,21 @@ object NavigationStateHolder {
         _isMuted.value = !_isMuted.value
     }
 
+    fun updateRoadContext(speedLimitKmh: Int?, signals: List<RoadSignal>) {
+        if (speedLimitKmh != null) {
+            _currentSpeedLimitKmh.value = speedLimitKmh
+        }
+        _roadSignals.value = signals
+    }
+
+    fun updateTrafficIncidents(incidents: List<TrafficIncident>) {
+        _activeTrafficIncidents.value = incidents
+    }
+
     fun stopNavigation() {
         _isNavigating.value = false
         _activeRoute.value = null
         _currentStepIndex.value = 0
+        _activeTrafficIncidents.value = emptyList()
     }
 }

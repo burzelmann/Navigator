@@ -26,12 +26,17 @@ import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.RoutingRepository
+import com.example.nagivator.data.repository.TrafficRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
+import com.example.nagivator.domain.model.TrafficIncident
+import com.example.nagivator.domain.model.TrafficIncidentType
 import com.example.nagivator.domain.model.TravelMode
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.TimeZone
 
@@ -43,13 +48,16 @@ class CarNavigationScreen(
     private val navManager = carContext.getCarService(NavigationManager::class.java)
     private val voiceGuidance = CarVoiceGuidance(carContext)
     private val routingRepository = RoutingRepository()
+    private val trafficRepository = TrafficRepository()
 
     private var locationJob: Job? = null
+    private var trafficJob: Job? = null
     private var isRecalculating = false
     private var lastAnnouncedStepIndex = -1
     private var offRouteStrikeCount = 0
     private var lastRecalculateMs = 0L
     private var hasArrived = false
+    private val announcedIncidentIds = mutableSetOf<String>()
 
     init {
         lifecycle.addObserver(this)
@@ -98,12 +106,77 @@ class CarNavigationScreen(
                 invalidate()
             }
         }
+
+        // Periodic Autobahn traffic check (warnings + automatic re-routing on closures)
+        trafficJob = lifecycleScope.launch {
+            while (isActive && !hasArrived) {
+                checkAutobahnTraffic()
+                delay(TRAFFIC_POLL_INTERVAL_MS)
+            }
+        }
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
         locationJob?.cancel()
+        trafficJob?.cancel()
         navManager.navigationEnded()
         voiceGuidance.shutdown()
+    }
+
+    private suspend fun checkAutobahnTraffic() {
+        val route = NavigationStateHolder.activeRoute.value ?: return
+        val incidents = runCatching { trafficRepository.fetchIncidentsOnRoute(route) }.getOrNull() ?: return
+        NavigationStateHolder.updateTrafficIncidents(incidents)
+        surfaceRenderer.requestRender()
+
+        val firstClosure = incidents.firstOrNull {
+            (it.type == TrafficIncidentType.CLOSURE || it.isBlocked) && announcedIncidentIds.add(it.id)
+        }
+        if (firstClosure != null) {
+            handleClosureReroute(firstClosure, route)
+            return
+        }
+
+        val firstWarning = incidents.firstOrNull { announcedIncidentIds.add(it.id) }
+        if (firstWarning != null) {
+            val kind = if (firstWarning.type == TrafficIncidentType.ROADWORK) "Baustelle" else "Verkehrsmeldung"
+            val msg = "Achtung auf ${firstWarning.roadId}: $kind voraus"
+            voiceGuidance.speak(msg)
+            CarToast.makeText(carContext, msg, CarToast.LENGTH_LONG).show()
+        }
+    }
+
+    private suspend fun handleClosureReroute(closure: TrafficIncident, currentRoute: RouteResult) {
+        val start = NavigationStateHolder.currentLocation.value
+            ?: currentRoute.geometryPoints.firstOrNull()
+            ?: return
+        val dest = currentRoute.waypoints.lastOrNull()
+            ?: currentRoute.geometryPoints.lastOrNull()
+            ?: return
+
+        val alertMsg = "Sperrung auf ${closure.roadId} voraus. Berechne Ausweichroute."
+        voiceGuidance.speak(alertMsg)
+        CarToast.makeText(carContext, alertMsg, CarToast.LENGTH_LONG).show()
+
+        if (isRecalculating) return
+        isRecalculating = true
+        try {
+            val result = routingRepository.getAlternativeRouteAvoiding(
+                waypoints = listOf(start, dest),
+                blockedPoint = LocationPoint(closure.latitude, closure.longitude),
+                mode = TravelMode.CAR
+            )
+            result.onSuccess { newRoute ->
+                NavigationStateHolder.updateRoute(newRoute)
+                NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
+                surfaceRenderer.updateRoute(newRoute)
+                lastAnnouncedStepIndex = -1
+                CarToast.makeText(carContext, "Ausweichroute aktiv", CarToast.LENGTH_SHORT).show()
+                invalidate()
+            }
+        } finally {
+            isRecalculating = false
+        }
     }
 
     private fun onLocationUpdated(loc: LocationPoint) {
@@ -371,5 +444,6 @@ class CarNavigationScreen(
         private const val OFF_ROUTE_STRIKES_REQUIRED = 3
         private const val RECALCULATE_COOLDOWN_MS = 10_000L
         private const val ARRIVAL_THRESHOLD_METERS = 35f
+        private const val TRAFFIC_POLL_INTERVAL_MS = 180_000L
     }
 }

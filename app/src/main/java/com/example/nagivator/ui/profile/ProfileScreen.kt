@@ -186,6 +186,30 @@ fun ProfileScreen(
                         onCheckedChange = { viewModel.setDynamicZoomEnabled(it) }
                     )
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            text = "Ampeln & Kreuzungen hervorheben",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "Zeigt Ampeln, Stopp-, Vorfahrt- und Kreisverkehr-Symbole",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.showRoadSignals,
+                        onCheckedChange = { viewModel.setShowRoadSignals(it) }
+                    )
+                }
             }
         }
 

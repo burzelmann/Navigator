@@ -1,5 +1,6 @@
 package com.example.nagivator.ui.map
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
@@ -40,13 +43,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.nagivator.data.repository.RoadContextRepository
+import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.RouteResult
+import kotlin.math.roundToInt
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -202,6 +212,65 @@ fun NavigationView(
                     imageVector = Icons.Default.Map,
                     contentDescription = "Routen-Übersicht"
                 )
+            }
+        }
+
+        // 2b. Speed & Speed-Limit Badge (Bottom-Left above Cockpit)
+        val liveLoc by NavigationStateHolder.currentLocation.collectAsState()
+        val speedLimitKmh by NavigationStateHolder.currentSpeedLimitKmh.collectAsState()
+        val currentKmh = ((liveLoc?.speedMps ?: 0f) * 3.6f).roundToInt().coerceAtLeast(0)
+        val isOverLimit = speedLimitKmh != null && speedLimitKmh!! > 0 && currentKmh > speedLimitKmh!! + 5
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = bottomPadding + 124.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            speedLimitKmh?.let { limit ->
+                Surface(
+                    shape = CircleShape,
+                    color = Color.White,
+                    border = BorderStroke(
+                        4.dp,
+                        if (limit == RoadContextRepository.SPEED_LIMIT_UNLIMITED) Color(0xFF78909C) else Color(0xFFD32F2F)
+                    ),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (limit == RoadContextRepository.SPEED_LIMIT_UNLIMITED) "∞" else limit.toString(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF111111)
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (isOverLimit) Color(0xFFC62828) else MaterialTheme.colorScheme.surface,
+                shadowElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = currentKmh.toString(),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isOverLimit) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "km/h",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isOverLimit) Color(0xFFFFCDD2) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

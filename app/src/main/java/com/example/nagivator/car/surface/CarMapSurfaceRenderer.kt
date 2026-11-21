@@ -6,6 +6,8 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
@@ -15,14 +17,22 @@ import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.RoadContextRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
+import com.example.nagivator.domain.model.RoadSignal
+import com.example.nagivator.domain.model.RoadSignalType
 import com.example.nagivator.domain.model.RouteResult
+import com.example.nagivator.domain.model.TrafficIncident
+import com.example.nagivator.domain.model.TrafficIncidentType
 import com.example.nagivator.ui.map.MapStyleHelper
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.ln
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.tan
 
 enum class MapPerspective {
@@ -36,6 +46,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     private var surfaceWidth = 800
     private var surfaceHeight = 480
     private var visibleArea: Rect? = null
+    private var stableArea: Rect? = null
 
     private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
     private var currentZoom = 16
@@ -135,6 +146,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     }
 
     override fun onStableAreaChanged(stableArea: Rect) {
+        this.stableArea = stableArea
         requestRender()
     }
 
@@ -348,6 +360,13 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
                 canvas.drawCircle(destProj.x, destProj.y, 7f, vehicleArrowPaint)
             }
 
+            // 2b. Render Road Signals (traffic lights, stop, give-way, roundabouts) & Traffic Incidents
+            val uprightRotation = if (mode == MapPerspective.HEADING_UP) loc.bearing else 0f
+            if (zoom >= 15 && settings.showRoadSignals) {
+                drawRoadSignals(canvas, NavigationStateHolder.roadSignals.value, ::project, uprightRotation)
+            }
+            drawTrafficIncidents(canvas, NavigationStateHolder.activeTrafficIncidents.value, ::project, uprightRotation)
+
             canvas.restore()
 
             // 3. Render Vehicle Location & Heading
@@ -370,10 +389,243 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
             canvas.drawPath(arrowPath, vehicleArrowPaint)
             canvas.restore()
 
+            // 4. Render Speed & Speed-Limit HUD Badge in bottom-right of stableArea
+            drawSpeedHud(
+                canvas = canvas,
+                speedMps = loc.speedMps,
+                speedLimitKmh = NavigationStateHolder.currentSpeedLimitKmh.value,
+                width = width,
+                height = height
+            )
+
         } finally {
             try {
                 s.unlockCanvasAndPost(canvas)
             } catch (_: Exception) {}
+        }
+    }
+
+    private fun drawRoadSignals(
+        canvas: Canvas,
+        signals: List<RoadSignal>,
+        project: (Double, Double) -> PointF,
+        uprightRotation: Float
+    ) {
+        if (signals.isEmpty()) return
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            textSize = 8f
+        }
+
+        for (sig in signals) {
+            val pt = project(sig.latitude, sig.longitude)
+            if (pt.x < -40f || pt.x > surfaceWidth + 40f || pt.y < -40f || pt.y > surfaceHeight + 40f) continue
+
+            canvas.save()
+            canvas.translate(pt.x, pt.y)
+            if (uprightRotation != 0f) canvas.rotate(uprightRotation)
+
+            when (sig.type) {
+                RoadSignalType.TRAFFIC_SIGNALS -> {
+                    val box = RectF(-7.5f, -15f, 7.5f, 15f)
+                    fillPaint.color = Color.parseColor("#1E2228")
+                    canvas.drawRoundRect(box, 4f, 4f, fillPaint)
+                    strokePaint.color = Color.WHITE
+                    strokePaint.strokeWidth = 1.6f
+                    canvas.drawRoundRect(box, 4f, 4f, strokePaint)
+
+                    fillPaint.color = Color.parseColor("#FF3B30")
+                    canvas.drawCircle(0f, -8.5f, 3.2f, fillPaint)
+                    fillPaint.color = Color.parseColor("#FFCC00")
+                    canvas.drawCircle(0f, 0f, 3.2f, fillPaint)
+                    fillPaint.color = Color.parseColor("#34C759")
+                    canvas.drawCircle(0f, 8.5f, 3.2f, fillPaint)
+                }
+                RoadSignalType.STOP -> {
+                    val oct = Path()
+                    val r = 13f
+                    for (i in 0 until 8) {
+                        val angle = PI / 8.0 + i * PI / 4.0
+                        val x = (r * cos(angle)).toFloat()
+                        val y = (r * sin(angle)).toFloat()
+                        if (i == 0) oct.moveTo(x, y) else oct.lineTo(x, y)
+                    }
+                    oct.close()
+                    fillPaint.color = Color.parseColor("#D32F2F")
+                    canvas.drawPath(oct, fillPaint)
+                    strokePaint.color = Color.WHITE
+                    strokePaint.strokeWidth = 2f
+                    canvas.drawPath(oct, strokePaint)
+                    canvas.drawText("STOP", 0f, 3f, textPaint)
+                }
+                RoadSignalType.GIVE_WAY -> {
+                    val tri = Path().apply {
+                        moveTo(-13f, -10f)
+                        lineTo(13f, -10f)
+                        lineTo(0f, 13f)
+                        close()
+                    }
+                    fillPaint.color = Color.WHITE
+                    canvas.drawPath(tri, fillPaint)
+                    strokePaint.color = Color.parseColor("#D32F2F")
+                    strokePaint.strokeWidth = 3.5f
+                    canvas.drawPath(tri, strokePaint)
+                }
+                RoadSignalType.ROUNDABOUT -> {
+                    fillPaint.color = Color.parseColor("#1565C0")
+                    canvas.drawCircle(0f, 0f, 13f, fillPaint)
+                    strokePaint.color = Color.WHITE
+                    strokePaint.strokeWidth = 2.2f
+                    canvas.drawCircle(0f, 0f, 13f, strokePaint)
+                    strokePaint.strokeWidth = 2.6f
+                    canvas.drawCircle(0f, 0f, 6.2f, strokePaint)
+                }
+            }
+            canvas.restore()
+        }
+    }
+
+    private fun drawTrafficIncidents(
+        canvas: Canvas,
+        incidents: List<TrafficIncident>,
+        project: (Double, Double) -> PointF,
+        uprightRotation: Float
+    ) {
+        if (incidents.isEmpty()) return
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#111111")
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            textSize = 15f
+        }
+
+        for (inc in incidents) {
+            val pt = project(inc.latitude, inc.longitude)
+            if (pt.x < -40f || pt.x > surfaceWidth + 40f || pt.y < -40f || pt.y > surfaceHeight + 40f) continue
+
+            canvas.save()
+            canvas.translate(pt.x, pt.y)
+            if (uprightRotation != 0f) canvas.rotate(uprightRotation)
+
+            if (inc.type == TrafficIncidentType.CLOSURE || inc.isBlocked) {
+                fillPaint.color = Color.parseColor("#D32F2F")
+                canvas.drawCircle(0f, 0f, 15f, fillPaint)
+                strokePaint.color = Color.WHITE
+                strokePaint.strokeWidth = 2.2f
+                canvas.drawCircle(0f, 0f, 15f, strokePaint)
+                fillPaint.color = Color.WHITE
+                canvas.drawRect(-9f, -3f, 9f, 3f, fillPaint)
+            } else {
+                val tri = Path().apply {
+                    moveTo(0f, -15f)
+                    lineTo(15f, 12f)
+                    lineTo(-15f, 12f)
+                    close()
+                }
+                fillPaint.color = Color.parseColor("#FFC107")
+                canvas.drawPath(tri, fillPaint)
+                strokePaint.color = Color.parseColor("#D32F2F")
+                strokePaint.strokeWidth = 3f
+                canvas.drawPath(tri, strokePaint)
+                canvas.drawText("!", 0f, 9f, textPaint)
+            }
+            canvas.restore()
+        }
+    }
+
+    private fun drawSpeedHud(
+        canvas: Canvas,
+        speedMps: Float,
+        speedLimitKmh: Int?,
+        width: Float,
+        height: Float
+    ) {
+        val currentKmh = (speedMps * 3.6f).roundToInt().coerceAtLeast(0)
+        val isOverLimit = speedLimitKmh != null && speedLimitKmh > 0 && currentKmh > speedLimitKmh + 5
+
+        val anchor = stableArea?.takeIf { !it.isEmpty } ?: visibleArea?.takeIf { !it.isEmpty }
+        val rightEdge = (anchor?.right?.toFloat() ?: width) - 16f
+        val bottomEdge = (anchor?.bottom?.toFloat() ?: height) - 16f
+
+        val pillW = 74f
+        val pillH = 56f
+        val pillRect = RectF(rightEdge - pillW, bottomEdge - pillH, rightEdge, bottomEdge)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = if (isOverLimit) Color.parseColor("#E6C62828") else Color.parseColor("#E0161B22")
+        }
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            color = if (isOverLimit) Color.parseColor("#FF8A80") else Color.parseColor("#6690A4AE")
+        }
+        val speedTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            textSize = 26f
+        }
+        val unitTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#CFD8DC")
+            textAlign = Paint.Align.CENTER
+            textSize = 11f
+        }
+
+        canvas.drawRoundRect(pillRect, 14f, 14f, bgPaint)
+        canvas.drawRoundRect(pillRect, 14f, 14f, borderPaint)
+        canvas.drawText(currentKmh.toString(), pillRect.centerX(), pillRect.top + 32f, speedTextPaint)
+        canvas.drawText("km/h", pillRect.centerX(), pillRect.bottom - 8f, unitTextPaint)
+
+        // Speed Limit Sign directly to the left of the speed pill
+        if (speedLimitKmh != null) {
+            val radius = 26f
+            val signCx = pillRect.left - 12f - radius
+            val signCy = pillRect.centerY()
+
+            val signFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = Color.WHITE
+            }
+            val signRing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 5.5f
+                color = if (speedLimitKmh == RoadContextRepository.SPEED_LIMIT_UNLIMITED) {
+                    Color.parseColor("#78909C")
+                } else {
+                    Color.parseColor("#D32F2F")
+                }
+            }
+            canvas.drawCircle(signCx, signCy, radius, signFill)
+            canvas.drawCircle(signCx, signCy, radius - 2.75f, signRing)
+
+            if (speedLimitKmh == RoadContextRepository.SPEED_LIMIT_UNLIMITED) {
+                val slashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.parseColor("#455A64")
+                    strokeWidth = 2.5f
+                }
+                for (offset in listOf(-5f, 0f, 5f)) {
+                    canvas.drawLine(
+                        signCx - 12f + offset, signCy + 12f + offset * 0.4f,
+                        signCx + 12f + offset, signCy - 12f + offset * 0.4f,
+                        slashPaint
+                    )
+                }
+            } else {
+                val limitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.parseColor("#111111")
+                    textAlign = Paint.Align.CENTER
+                    typeface = Typeface.DEFAULT_BOLD
+                    textSize = if (speedLimitKmh >= 100) 18f else 22f
+                }
+                canvas.drawText(speedLimitKmh.toString(), signCx, signCy + 7.5f, limitPaint)
+            }
         }
     }
 

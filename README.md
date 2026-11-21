@@ -67,6 +67,8 @@
   - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Nacht-Farbschema, Kartenausrichtung, Auto-Zoom und Sprachausgabe.
   - **Suche & Favoriten:** Direkte Zielsuche über die Auto-Tastatur sowie Ein-Klick-Routenstart aus gespeicherten Favoriten.
   - **Turn-by-Turn-Routenführung:** Blaue Manöver-Karte mit Vektor-Pfeilen, nächstem Schritt, Live-ETA/Reststrecke, automatischer Zielankunft und stabiler Off-Route-Erkennung (Segment-Projektion + 3-fach-Hysterese & Cooldown gegen Fehl-Neuberechnungen auf Wald-/Überlandstrecken).
+  - **Tacho, Tempolimit & Kreuzungs-Marker:** Kompaktes Geschwindigkeits- & Tempolimit-HUD (mit Warnfarbe bei Überschreitung) sowie kontrastreiche Karten-Marker für Ampeln, Stoppschilder, Vorfahrt-achten-Schilder und Kreisverkehre über die zugangsfreie OpenStreetMap 0.6 Map API (lokal gecacht).
+  - **Autobahn-Verkehrsdaten (ohne API-Key):** Abruf von Sperrungen, Baustellen und Verkehrsmeldungen über die offizielle Autobahn GmbH API (`verkehr.autobahn.de`) mit Sprach-/Toast-Warnung und automatischem Re-Routing bei Vollsperrungen.
 
 ---
 

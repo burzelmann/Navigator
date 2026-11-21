@@ -7,6 +7,7 @@
             <intent-filter>
                 <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_START" />
                 <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_OFF_ROUTE" />
+                <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_TELEPORT" />
                 <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_STOP" />
             </intent-filter>
         </receiver>

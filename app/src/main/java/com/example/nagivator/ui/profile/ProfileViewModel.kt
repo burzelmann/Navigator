@@ -32,4 +32,8 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     fun setDynamicZoomEnabled(enabled: Boolean) {
         userSettingsRepository.setDynamicZoomEnabled(enabled)
     }
+
+    fun setShowRoadSignals(enabled: Boolean) {
+        userSettingsRepository.setShowRoadSignals(enabled)
+    }
 }

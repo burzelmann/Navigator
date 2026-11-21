@@ -28,6 +28,7 @@ class CarQuickSettingsScreen(
         val currentTheme = settings.themeMode
         val currentScheme = settings.mapColorScheme
         val dynamicZoom = settings.dynamicZoomEnabled
+        val showRoadSignals = settings.showRoadSignals
         val currentPerspective = surfaceRenderer.getPerspective()
         val isMuted = NavigationStateHolder.isMuted.value
 
@@ -74,6 +75,17 @@ class CarQuickSettingsScreen(
                     .addText("Passt Zoom automatisch an Geschwindigkeit an")
                     .setOnClickListener {
                         userSettingsRepository.setDynamicZoomEnabled(!dynamicZoom)
+                        invalidate()
+                    }
+                    .build()
+            )
+            .addItem(
+                Row.Builder()
+                    .setTitle("Kreuzungs-Symbole: ${if (showRoadSignals) "Aktiv" else "Aus"}")
+                    .addText("Ampeln, Stopp, Vorfahrt achten & Kreisverkehre")
+                    .setOnClickListener {
+                        userSettingsRepository.setShowRoadSignals(!showRoadSignals)
+                        surfaceRenderer.requestRender()
                         invalidate()
                     }
                     .build()
