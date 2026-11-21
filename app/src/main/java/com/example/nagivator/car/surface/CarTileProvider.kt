@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import com.example.nagivator.data.repository.MapColorScheme
+import com.example.nagivator.ui.map.MapStyleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,30 +28,56 @@ class CarTileProvider(
         .build()
 
     private val cacheDir = File(context.cacheDir, "car_tiles").apply { mkdirs() }
-    private val memoryCache = object : LruCache<String, Bitmap>(64) {
+    private val memoryCache = object : LruCache<String, Bitmap>(96) {
         override fun sizeOf(key: String, value: Bitmap): Int = 1
     }
 
     private val inFlightRequests = ConcurrentHashMap.newKeySet<String>()
 
-    fun getTile(zoom: Int, x: Int, y: Int): Bitmap? {
-        val key = "${zoom}_${x}_$y"
-        
-        // 1. Check Memory Cache
-        memoryCache.get(key)?.let { return it }
+    fun getTile(
+        zoom: Int,
+        x: Int,
+        y: Int,
+        isDark: Boolean = false,
+        scheme: MapColorScheme = MapColorScheme.GRAPHITE
+    ): Bitmap? {
+        val rawKey = "${zoom}_${x}_$y"
+        val cacheKey = "${rawKey}_${if (isDark) scheme.name else "DAY"}"
 
-        // 2. Check Disk Cache
-        val diskFile = File(cacheDir, "$key.png")
+        // 1. Check Memory Cache (already styled)
+        memoryCache.get(cacheKey)?.let { return it }
+
+        // 2. Check Disk Cache or Queue Download (transform off the render thread)
+        val diskFile = File(cacheDir, "$rawKey.png")
         if (diskFile.exists() && diskFile.length() > 0) {
-            val bitmap = BitmapFactory.decodeFile(diskFile.absolutePath)
-            if (bitmap != null) {
-                memoryCache.put(key, bitmap)
-                return bitmap
+            if (!isDark) {
+                val bitmap = BitmapFactory.decodeFile(diskFile.absolutePath)
+                if (bitmap != null) {
+                    memoryCache.put(cacheKey, bitmap)
+                    return bitmap
+                }
+            } else if (inFlightRequests.add(cacheKey)) {
+                scope.launch {
+                    try {
+                        val rawBitmap = BitmapFactory.decodeFile(diskFile.absolutePath)
+                        if (rawBitmap != null) {
+                            val styled = MapStyleHelper.transformNightBitmap(rawBitmap, scheme)
+                            rawBitmap.recycle()
+                            memoryCache.put(cacheKey, styled)
+                            onTileAvailable()
+                        }
+                    } catch (_: Exception) {
+                        // Ignore decode failure
+                    } finally {
+                        inFlightRequests.remove(cacheKey)
+                    }
+                }
             }
+            return null
         }
 
         // 3. Queue Download
-        if (inFlightRequests.add(key)) {
+        if (inFlightRequests.add(cacheKey)) {
             scope.launch {
                 try {
                     val url = "https://tile.openstreetmap.de/$zoom/$x/$y.png"
@@ -61,13 +89,20 @@ class CarTileProvider(
                     if (response.isSuccessful) {
                         val bytes = response.body()?.bytes()
                         if (bytes != null && bytes.isNotEmpty()) {
-                            val tempFile = File(cacheDir, "$key.tmp")
+                            val tempFile = File(cacheDir, "$rawKey.tmp")
                             FileOutputStream(tempFile).use { it.write(bytes) }
                             tempFile.renameTo(diskFile)
 
-                            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            if (bitmap != null) {
-                                memoryCache.put(key, bitmap)
+                            val rawBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (rawBitmap != null) {
+                                val finalBitmap = if (isDark) {
+                                    MapStyleHelper.transformNightBitmap(rawBitmap, scheme).also {
+                                        rawBitmap.recycle()
+                                    }
+                                } else {
+                                    rawBitmap
+                                }
+                                memoryCache.put(cacheKey, finalBitmap)
                                 onTileAvailable()
                             }
                         }
@@ -75,7 +110,7 @@ class CarTileProvider(
                 } catch (_: Exception) {
                     // Ignore network failure, will retry next frame
                 } finally {
-                    inFlightRequests.remove(key)
+                    inFlightRequests.remove(cacheKey)
                 }
             }
         }

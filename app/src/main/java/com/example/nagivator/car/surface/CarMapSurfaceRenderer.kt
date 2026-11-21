@@ -284,7 +284,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
             val centerTy = latToTileY(centerLat, zoom)
 
             // 1. Render Map Tiles (expanded bounds for rotated HEADING_UP view)
-            tilePaint.colorFilter = MapStyleHelper.createTileColorFilter(isDark, scheme)
+            tilePaint.colorFilter = null
 
             val maxDx = maxOf(pivotX, width - pivotX)
             val maxDy = maxOf(pivotY, height - pivotY)
@@ -320,7 +320,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
 
             for (tx in minX..maxX) {
                 for (ty in minY..maxY) {
-                    val tileBitmap = tileProvider.getTile(zoom, tx, ty)
+                    val tileBitmap = tileProvider.getTile(zoom, tx, ty, isDark, scheme)
                     val px = pivotX + (tx - centerTx).toFloat() * tileSize
                     val py = pivotY + (ty - centerTy).toFloat() * tileSize
 

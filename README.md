@@ -63,7 +63,7 @@
   - Dreifach-Toggle für Erscheinungsbild (*System*, *Immer hell*, *Immer dunkel*).
 
 - 🚗 **Android Auto Integration:**
-  - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel, 4 wählbare Nacht-Farbschemata (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast*), geschwindigkeits- und manöverabhängiger dynamischer Auto-Zoom (automatisches Heranzoomen vor Kreuzungen, Kreisverkehren und Ausfahrten) sowie persistente Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
+  - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel, 4 kontrastreiche Nacht-Farbschemata mit semantischem Pixel-Remapping und positiver Polarität (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast* – helle Straßen auf dunklem Grund, 100 % offline-kompatibel), geschwindigkeits- und manöverabhängiger dynamischer Auto-Zoom sowie persistente Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
   - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Nacht-Farbschema, Kartenausrichtung, Auto-Zoom und Sprachausgabe.
   - **Suche & Favoriten:** Direkte Zielsuche über die Auto-Tastatur sowie Ein-Klick-Routenstart aus gespeicherten Favoriten.
   - **Turn-by-Turn-Routenführung:** Blaue Manöver-Karte mit Vektor-Pfeilen, nächstem Schritt, Live-ETA/Reststrecke, automatischer Zielankunft und stabiler Off-Route-Erkennung (Segment-Projektion + 3-fach-Hysterese & Cooldown gegen Fehl-Neuberechnungen auf Wald-/Überlandstrecken).

@@ -34,7 +34,10 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 
 import android.graphics.Path
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.nagivator.data.repository.MapColorScheme
+import java.io.InputStream
 
 // OpenStreetMap Deutschland tile source - completely free, open & no API key required
 val OsmDeTileSource = XYTileSource(
@@ -43,6 +46,29 @@ val OsmDeTileSource = XYTileSource(
     arrayOf("https://tile.openstreetmap.de/"),
     "© OpenStreetMap-Mitwirkende"
 )
+
+private class SemanticNightOsmTileSource(
+    private val scheme: MapColorScheme
+) : XYTileSource(
+    "OSM_DE",
+    0, 19, 256, ".png",
+    arrayOf("https://tile.openstreetmap.de/"),
+    "© OpenStreetMap-Mitwirkende"
+) {
+    override fun getDrawable(aFilePath: String?): Drawable? {
+        val raw = super.getDrawable(aFilePath) as? BitmapDrawable ?: return null
+        val bmp = raw.bitmap ?: return raw
+        val styled = MapStyleHelper.transformNightBitmap(bmp, scheme)
+        return BitmapDrawable(null, styled)
+    }
+
+    override fun getDrawable(aFileInputStream: InputStream?): Drawable? {
+        val raw = super.getDrawable(aFileInputStream) as? BitmapDrawable ?: return null
+        val bmp = raw.bitmap ?: return raw
+        val styled = MapStyleHelper.transformNightBitmap(bmp, scheme)
+        return BitmapDrawable(null, styled)
+    }
+}
 
 // Global bitmap cache to avoid memory allocations and GC thrashing
 private val poiBitmapCache = HashMap<String, Bitmap>()
@@ -105,8 +131,14 @@ fun OsmMapView(
     }.collectAsState()
 
     LaunchedEffect(isDarkTheme, userSettings.mapColorScheme) {
-        val filter = MapStyleHelper.createTileColorFilter(isDarkTheme, userSettings.mapColorScheme)
-        mapView.overlayManager.tilesOverlay.setColorFilter(filter)
+        mapView.overlayManager.tilesOverlay.setColorFilter(null)
+        mapView.overlayManager.tilesOverlay.setLoadingBackgroundColor(
+            MapStyleHelper.canvasBackgroundColor(isDarkTheme, userSettings.mapColorScheme)
+        )
+        mapView.tileProvider.clearTileCache()
+        mapView.setTileSource(
+            if (isDarkTheme) SemanticNightOsmTileSource(userSettings.mapColorScheme) else OsmDeTileSource
+        )
         mapView.invalidate()
     }
 
