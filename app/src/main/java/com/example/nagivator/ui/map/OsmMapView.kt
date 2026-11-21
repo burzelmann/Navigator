@@ -89,7 +89,9 @@ fun OsmMapView(
     centerOnLocationTrigger: Long = 0L,
     pois: List<PoiEntity> = emptyList(),
     activeRoute: RouteResult? = null,
+    alternativeRoutes: List<RouteResult> = emptyList(),
     selectedPoi: PoiEntity? = null,
+    onSelectAlternativeRoute: (RouteResult) -> Unit = {},
     onPoiClick: (PoiEntity) -> Unit = {},
     onMapClick: (GeoPoint) -> Unit = {},
     onMapLongClick: (GeoPoint) -> Unit = {},
@@ -198,8 +200,8 @@ fun OsmMapView(
         }
     }
 
-    // Update map overlays ONLY when POIs, activeRoute, parkedCar or currentLocation actually change
-    LaunchedEffect(pois, activeRoute, currentLocation != null, selectedPoi, userSettings.parkedCar) {
+    // Update map overlays ONLY when POIs, activeRoute, alternativeRoutes, parkedCar or currentLocation actually change
+    LaunchedEffect(pois, activeRoute, alternativeRoutes, isNavigating, currentLocation != null, selectedPoi, userSettings.parkedCar) {
         mapView.overlays.retainAll(listOf(mapView.overlayManager.tilesOverlay, rotationGestureOverlay))
         if (!mapView.overlays.contains(rotationGestureOverlay)) {
             mapView.overlays.add(rotationGestureOverlay)
@@ -224,7 +226,25 @@ fun OsmMapView(
             mapView.overlays.add(locationPulseOverlay)
         }
 
-        // 3. Active Route Polyline
+        // 3a. Alternative Route Polylines (rendered underneath the active route; clickable to switch)
+        if (!isNavigating && alternativeRoutes.size > 1) {
+            alternativeRoutes.forEach { altRoute ->
+                if (altRoute != activeRoute && altRoute.geometryPoints.isNotEmpty()) {
+                    val altLine = Polyline(mapView).apply {
+                        outlinePaint.color = Color.parseColor("#99607D8B")
+                        outlinePaint.strokeWidth = 11f
+                        setPoints(altRoute.geometryPoints.map { GeoPoint(it.latitude, it.longitude) })
+                        setOnClickListener { _, _, _ ->
+                            onSelectAlternativeRoute(altRoute)
+                            true
+                        }
+                    }
+                    mapView.overlays.add(altLine)
+                }
+            }
+        }
+
+        // 3b. Active Route Polyline
         activeRoute?.let { route ->
             if (route.geometryPoints.isNotEmpty()) {
                 val line = Polyline(mapView).apply {

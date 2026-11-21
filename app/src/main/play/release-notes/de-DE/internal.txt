@@ -1,1 +1,1 @@
-Release 3: On-Device Fahrtenverlauf & Rückweg, intelligente Ziel-Vorschläge nach Uhrzeit & Standort (100 % offline), neues Ziele-Schnellmenü in Android Auto sowie automatisches Parkplatz-Merken mit P-Marker und Fußweg-Rückführung zum Auto.
+Alternativrouten & Live-ETA teilen: Bis zu 3 Routenalternativen vor Fahrtantritt (native Routenvorschau in Android Auto sowie klickbare Alternativrouten & Auswahl-Chips am Smartphone) und Live-Ankunftszeit per Share-Button direkt aus dem Navigations-Cockpit teilen.

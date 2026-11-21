@@ -1,5 +1,6 @@
 package com.example.nagivator.ui.map
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Close
@@ -227,10 +230,12 @@ fun PoiDetailsCard(
 @Composable
 fun RouteCard(
     route: RouteResult,
+    alternativeRoutes: List<RouteResult> = emptyList(),
     selectedPoi: PoiEntity?,
     currentTravelMode: TravelMode,
     isNavigating: Boolean,
     currentStepIndex: Int = 0,
+    onSelectAlternativeRoute: (RouteResult) -> Unit = {},
     onModeChange: (TravelMode) -> Unit,
     onStartNavigation: () -> Unit,
     onStopNavigation: () -> Unit,
@@ -338,6 +343,30 @@ fun RouteCard(
                     icon = { Icon(Icons.Default.DirectionsCar, contentDescription = null) }
                 ) {
                     Text("Auto")
+                }
+            }
+
+            if (!isNavigating && alternativeRoutes.size > 1) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    alternativeRoutes.forEachIndexed { idx, alt ->
+                        val isSelected = alt == route
+                        val label = if (idx == 0) {
+                            "Schnellste • ${alt.formattedDuration}"
+                        } else {
+                            "Route ${idx + 1} • ${alt.formattedDuration}"
+                        }
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onSelectAlternativeRoute(alt) },
+                            label = { Text(label) }
+                        )
+                    }
                 }
             }
 

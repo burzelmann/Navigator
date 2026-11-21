@@ -118,16 +118,24 @@ class CarSearchScreen(
         invalidate()
 
         lifecycleScope.launch {
-            val result = routingRepository.getRoute(
+            val result = routingRepository.getRouteAlternatives(
                 waypoints = listOf(startLoc, destination),
                 mode = TravelMode.CAR
             )
 
-            result.onSuccess { route ->
+            result.onSuccess { routes ->
                 isCalculatingRoute = false
-                tripHistoryRepository.recordTrip(startLoc, destination, TravelMode.CAR)
-                NavigationStateHolder.startNavigation(route)
-                surfaceRenderer.updateRoute(route)
+                if (routes.size > 1) {
+                    invalidate()
+                    screenManager.push(
+                        CarRoutePreviewScreen(carContext, surfaceRenderer, routes, startLoc, destination)
+                    )
+                } else {
+                    val route = routes.first()
+                    tripHistoryRepository.recordTrip(startLoc, destination, TravelMode.CAR)
+                    NavigationStateHolder.startNavigation(route)
+                    surfaceRenderer.updateRoute(route)
+                }
             }.onFailure { error ->
                 isCalculatingRoute = false
                 invalidate()

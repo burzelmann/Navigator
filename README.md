@@ -38,7 +38,8 @@
 
 - 🎙️ **Dedizierte Vollbild-Turn-by-Turn Navigation:**
   - Prominentes Abbiege-Banner mit riesigen Manöver-Icons, Entfernungsangabe und zweizeiliger Vorschau auf den übernächsten Schritt.
-  - Ankunfts-Cockpit mit Live-Uhrzeit (ETA), Restdauer, Reststrecke und Schnellausstieg.
+  - **Alternativrouten (bis zu 3 Strecken):** Vor Abfahrt auf der Karte direkt anklickbar oder per Auswahl-Chips in der Routen-Karte umschaltbar.
+  - Ankunfts-Cockpit mit Live-Uhrzeit (ETA), Restdauer, Reststrecke, **Live-ETA teilen** (über das Android Share Sheet) und Schnellausstieg.
   - Kamera-Folgemodus mit enger Zoomstufe (17.5) und Umschaltung auf Gesamtrouten-Übersicht.
   - **Aktivierter Bildschirm-Timeout-Schutz (`FLAG_KEEP_SCREEN_ON`)** während aktiver Navigation.
 
@@ -68,6 +69,7 @@
   - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel, 4 kontrastreiche Nacht-Farbschemata mit semantischem Pixel-Remapping und positiver Polarität (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast* – helle Straßen auf dunklem Grund, 100 % offline-kompatibel), geschwindigkeits- und manöverabhängiger dynamischer Auto-Zoom sowie persistente Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
   - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Nacht-Farbschema, Kartenausrichtung, Auto-Zoom und Sprachausgabe.
   - **Suche, Favoriten & „Ziele“-Schnellmenü:** Direkte Zielsuche über die Auto-Tastatur, Ein-Klick-Routenstart aus Favoriten sowie das neue **`Ziele`-Menü (`CarDestinationsScreen`)** mit lokalen Ziel-Vorschlägen für die aktuelle Tageszeit, den letzten Fahrten und einem **Rückweg-Umschalter**.
+  - **Routenvorschau & Alternativrouten (`CarRoutePreviewScreen`):** Bei mehreren verfügbaren Strecken öffnet sich die native Android-Auto-Routenvorschau (`RoutePreviewNavigationTemplate`) zum Vergleichen und Auswählen von bis zu 3 Alternativrouten direkt auf der Karte vor Fahrtantritt.
   - **Automatisches Parkplatz-Merken:** Beim Beenden der Android-Auto-Navigation wird die Fahrzeugposition lokal gespeichert und in der Smartphone-App als `P`-Marker samt Fußweg-Rückführung angezeigt.
   - **Turn-by-Turn-Routenführung:** Blaue Manöver-Karte mit Vektor-Pfeilen, nächstem Schritt, Live-ETA/Reststrecke, automatischer Zielankunft und stabiler Off-Route-Erkennung (Segment-Projektion + 3-fach-Hysterese & Cooldown gegen Fehl-Neuberechnungen auf Wald-/Überlandstrecken).
   - **Tacho, Tempolimit & Kreuzungs-Marker:** Kompaktes Geschwindigkeits- & Tempolimit-HUD (mit Warnfarbe bei Überschreitung) sowie kontrastreiche Karten-Marker für Ampeln, Stoppschilder, Vorfahrt-achten-Schilder und Kreisverkehre über die zugangsfreie OpenStreetMap 0.6 Map API (lokal gecacht).

@@ -100,6 +100,67 @@ class RoutingRepository {
     }
 
     /**
+     * Computes up to [maxRoutes] route alternatives (e.g. via OSRM `alternatives=true`),
+     * sorted fastest-first so users can pick their preferred route before departure.
+     */
+    suspend fun getRouteAlternatives(
+        waypoints: List<LocationPoint>,
+        mode: TravelMode,
+        footSpeedPref: SpeedPreference = SpeedPreference.NORMAL,
+        carSpeedPref: SpeedPreference = SpeedPreference.NORMAL,
+        maxRoutes: Int = 3
+    ): Result<List<RouteResult>> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (waypoints.size < 2) {
+                throw IllegalArgumentException("Mindestens 2 Wegpunkte erforderlich")
+            }
+
+            val results = mutableListOf<RouteResult>()
+
+            // 1. For FOOT mode, prefer BRouter outdoor trail route as primary
+            if (mode == TravelMode.FOOT) {
+                val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
+                if (brouterResult != null && brouterResult.geometryPoints.size >= 2) {
+                    results.add(brouterResult)
+                }
+            }
+
+            // 2. Query OSRM with alternatives=true
+            try {
+                val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
+                val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+                val response = routingApi.getRoute(
+                    profile = osrmProfile,
+                    coordinates = coordsStr,
+                    alternatives = true
+                )
+                val parsed = response.routes.map {
+                    parseOsrmRoute(it, waypoints, mode, footSpeedPref, carSpeedPref)
+                }
+                for (candidate in parsed) {
+                    val isDuplicate = results.any { existing ->
+                        kotlin.math.abs(existing.totalDistanceMeters - candidate.totalDistanceMeters) < 120.0 &&
+                            kotlin.math.abs(existing.totalDurationSeconds - candidate.totalDurationSeconds) < 30.0
+                    }
+                    if (!isDuplicate) {
+                        results.add(candidate)
+                    }
+                }
+            } catch (_: Exception) {
+                // proceed to fallback if empty
+            }
+
+            if (results.isEmpty()) {
+                results.add(getGeodesicFallbackRoute(waypoints, mode, footSpeedPref, carSpeedPref))
+            }
+
+            results
+                .sortedBy { it.totalDurationSeconds }
+                .take(maxRoutes.coerceAtLeast(1))
+        }
+    }
+
+    /**
      * Attempts to compute an alternative driving route that avoids [blockedPoint] (e.g. an Autobahn closure).
      * First evaluates OSRM `alternatives=true`; if all alternatives pass the closure, computes a lateral detour via-point.
      */

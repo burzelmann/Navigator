@@ -166,7 +166,9 @@ fun MapScreen(
             centerOnLocationTrigger = uiState.centerOnLocationTrigger,
             pois = pois,
             activeRoute = uiState.activeRoute,
+            alternativeRoutes = uiState.alternativeRoutes,
             selectedPoi = uiState.selectedPoi,
+            onSelectAlternativeRoute = { viewModel.selectAlternativeRoute(it) },
             onPoiClick = { poi -> 
                 if (uiState.isRoutePlanningMode) {
                     viewModel.addWaypoint(LocationPoint(poi.latitude, poi.longitude, poi.displayTitle))
@@ -423,10 +425,12 @@ fun MapScreen(
             } else if (uiState.activeRoute != null) {
                 RouteCard(
                     route = uiState.activeRoute!!,
+                    alternativeRoutes = uiState.alternativeRoutes,
                     selectedPoi = uiState.selectedPoi,
                     currentTravelMode = uiState.travelMode,
                     isNavigating = uiState.isNavigating,
                     currentStepIndex = uiState.currentRouteStepIndex,
+                    onSelectAlternativeRoute = { viewModel.selectAlternativeRoute(it) },
                     onModeChange = { mode ->
                         uiState.selectedPoi?.let { poi ->
                             viewModel.startRouteToPoi(poi, mode)

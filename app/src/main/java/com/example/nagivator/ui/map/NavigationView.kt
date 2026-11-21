@@ -1,5 +1,6 @@
 package com.example.nagivator.ui.map
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RoundaboutRight
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TurnLeft
 import androidx.compose.material.icons.filled.TurnRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -50,10 +52,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.data.repository.RoadContextRepository
+import com.example.nagivator.domain.EtaShareFormatter
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.RouteResult
 import kotlin.math.roundToInt
@@ -307,18 +312,52 @@ fun NavigationView(
                     }
                 }
 
-                Button(
-                    onClick = onStopNavigation,
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+                val context = LocalContext.current
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("BEENDEN", style = MaterialTheme.typography.labelLarge)
+                    IconButton(
+                        onClick = {
+                            val remainingMeters = if (route.geometryPoints.isNotEmpty() && liveLoc != null) {
+                                CarNavigationHelper.remainingPolylineMeters(liveLoc, route.geometryPoints)
+                            } else {
+                                route.totalDistanceMeters
+                            }
+                            val remainingSec = CarNavigationHelper.estimateRemainingSeconds(route, remainingMeters)
+                            val destName = route.waypoints.lastOrNull()?.name ?: "meinem Ziel"
+                            val shareText = EtaShareFormatter.formatShareMessage(
+                                destinationName = destName,
+                                remainingDistanceMeters = remainingMeters,
+                                remainingSeconds = remainingSec
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Ankunftszeit teilen"))
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Ankunftszeit teilen",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Button(
+                        onClick = onStopNavigation,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("BEENDEN", style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             }
         }

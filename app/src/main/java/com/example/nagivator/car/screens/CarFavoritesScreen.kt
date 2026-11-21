@@ -132,16 +132,24 @@ class CarFavoritesScreen(
         invalidate()
 
         lifecycleScope.launch {
-            val result = routingRepository.getRoute(
+            val result = routingRepository.getRouteAlternatives(
                 waypoints = listOf(startLoc, destLoc),
                 mode = TravelMode.CAR
             )
 
-            result.onSuccess { route ->
+            result.onSuccess { routes ->
                 isCalculating = false
-                tripHistoryRepository.recordTrip(startLoc, destLoc, TravelMode.CAR)
-                NavigationStateHolder.startNavigation(route)
-                surfaceRenderer.updateRoute(route)
+                if (routes.size > 1) {
+                    invalidate()
+                    screenManager.push(
+                        CarRoutePreviewScreen(carContext, surfaceRenderer, routes, startLoc, destLoc)
+                    )
+                } else {
+                    val route = routes.first()
+                    tripHistoryRepository.recordTrip(startLoc, destLoc, TravelMode.CAR)
+                    NavigationStateHolder.startNavigation(route)
+                    surfaceRenderer.updateRoute(route)
+                }
             }.onFailure { error ->
                 isCalculating = false
                 invalidate()

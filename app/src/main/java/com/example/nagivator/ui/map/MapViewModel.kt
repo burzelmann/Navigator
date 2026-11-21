@@ -55,6 +55,7 @@ data class MapUiState(
     val currentLocation: LocationPoint? = null,
     val selectedPoi: PoiEntity? = null,
     val activeRoute: RouteResult? = null,
+    val alternativeRoutes: List<RouteResult> = emptyList(),
     val travelMode: TravelMode = TravelMode.FOOT,
     val searchResults: List<LocationPoint> = emptyList(),
     val isSearching: Boolean = false,
@@ -437,11 +438,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isCalculatingRoute = true, routeError = null, travelMode = mode) }
             val footPref = userSettingsRepository.settings.value.footSpeed
             val carPref = userSettingsRepository.settings.value.carSpeed
-            val result = routingRepository.getRoute(listOf(start, destination), mode, footPref, carPref)
-            result.onSuccess { route ->
+            val result = routingRepository.getRouteAlternatives(listOf(start, destination), mode, footPref, carPref)
+            result.onSuccess { routes ->
                 _uiState.update {
                     it.copy(
-                        activeRoute = route,
+                        activeRoute = routes.firstOrNull(),
+                        alternativeRoutes = routes,
                         isCalculatingRoute = false
                     )
                 }
@@ -449,11 +451,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isCalculatingRoute = false,
+                        alternativeRoutes = emptyList(),
                         routeError = error.localizedMessage ?: "Routenberechnung fehlgeschlagen"
                     )
                 }
             }
         }
+    }
+
+    fun selectAlternativeRoute(route: RouteResult) {
+        _uiState.update { it.copy(activeRoute = route) }
     }
 
     private var searchJob: Job? = null
@@ -793,6 +800,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 isNavigating = false, 
                 activeRoute = null, 
+                alternativeRoutes = emptyList(),
                 selectedPoi = null,
                 plannedWaypoints = emptyList(),
                 isRoutePlanningMode = false
