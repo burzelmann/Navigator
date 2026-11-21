@@ -18,6 +18,7 @@ import com.example.nagivator.data.local.NagivatorDatabase
 import com.example.nagivator.data.local.entity.PoiEntity
 import com.example.nagivator.data.repository.PoiRepository
 import com.example.nagivator.data.repository.RoutingRepository
+import com.example.nagivator.data.repository.TripHistoryRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.TravelMode
@@ -31,6 +32,7 @@ class CarFavoritesScreen(
 
     private val db = NagivatorDatabase.getDatabase(carContext)
     private val poiRepository = PoiRepository(db.poiDao(), db.savedRouteDao())
+    private val tripHistoryRepository = TripHistoryRepository(db.tripHistoryDao())
     private val routingRepository = RoutingRepository()
 
     private var favoritePois: List<PoiEntity> = emptyList()
@@ -137,6 +139,7 @@ class CarFavoritesScreen(
 
             result.onSuccess { route ->
                 isCalculating = false
+                tripHistoryRepository.recordTrip(startLoc, destLoc, TravelMode.CAR)
                 NavigationStateHolder.startNavigation(route)
                 surfaceRenderer.updateRoute(route)
             }.onFailure { error ->

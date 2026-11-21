@@ -198,8 +198,8 @@ fun OsmMapView(
         }
     }
 
-    // Update map overlays ONLY when POIs, activeRoute or currentLocation actually change
-    LaunchedEffect(pois, activeRoute, currentLocation != null, selectedPoi) {
+    // Update map overlays ONLY when POIs, activeRoute, parkedCar or currentLocation actually change
+    LaunchedEffect(pois, activeRoute, currentLocation != null, selectedPoi, userSettings.parkedCar) {
         mapView.overlays.retainAll(listOf(mapView.overlayManager.tilesOverlay, rotationGestureOverlay))
         if (!mapView.overlays.contains(rotationGestureOverlay)) {
             mapView.overlays.add(rotationGestureOverlay)
@@ -276,6 +276,18 @@ fun OsmMapView(
                 }
                 mapView.overlays.add(marker)
             }
+        }
+
+        // 6. Parked Car Marker ("P" pin)
+        userSettings.parkedCar?.let { parked ->
+            val parkedBitmap = getParkedCarBitmap()
+            val marker = Marker(mapView).apply {
+                position = GeoPoint(parked.latitude, parked.longitude)
+                title = "Parkplatz: ${parked.label}"
+                icon = BitmapDrawable(context.resources, parkedBitmap)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            }
+            mapView.overlays.add(marker)
         }
 
         mapView.invalidate()
@@ -530,4 +542,43 @@ private fun createWaypointMarkerBitmap(index: Int): Bitmap {
     canvas.drawText(letter, center, textY, textPaint)
 
     return bitmap
+}
+
+private fun getParkedCarBitmap(): Bitmap {
+    return poiBitmapCache.getOrPut("parked-car") {
+        val size = 104
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val center = size / 2f
+
+        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#44000000")
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(center, center + 4f, 36f, shadowPaint)
+
+        val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1565C0")
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(center, center, 34f, pinPaint)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 5f
+        }
+        canvas.drawCircle(center, center, 34f, borderPaint)
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            isFakeBoldText = true
+        }
+        val textY = center - ((textPaint.descent() + textPaint.ascent()) / 2f)
+        canvas.drawText("P", center, textY, textPaint)
+
+        bitmap
+    }
 }

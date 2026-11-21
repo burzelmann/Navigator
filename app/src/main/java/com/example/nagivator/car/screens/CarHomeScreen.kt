@@ -112,6 +112,13 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
             }
             .build()
 
+        val destinationsAction = Action.Builder()
+            .setTitle("Ziele")
+            .setOnClickListener {
+                screenManager.push(CarDestinationsScreen(carContext, surfaceRenderer))
+            }
+            .build()
+
         val settingsAction = Action.Builder()
             .setTitle("Optionen")
             .setOnClickListener {
@@ -126,6 +133,7 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
             val actionStrip = ActionStrip.Builder()
                 .addAction(searchAction)
                 .addAction(favoritesAction)
+                .addAction(destinationsAction)
                 .addAction(settingsAction)
                 .build()
 

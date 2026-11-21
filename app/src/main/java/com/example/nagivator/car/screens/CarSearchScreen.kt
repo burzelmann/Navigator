@@ -11,7 +11,9 @@ import androidx.car.app.model.Template
 import androidx.lifecycle.lifecycleScope
 import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
+import com.example.nagivator.data.local.NagivatorDatabase
 import com.example.nagivator.data.repository.RoutingRepository
+import com.example.nagivator.data.repository.TripHistoryRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.TravelMode
@@ -27,6 +29,8 @@ class CarSearchScreen(
     private val surfaceRenderer: CarMapSurfaceRenderer
 ) : Screen(carContext) {
 
+    private val db = NagivatorDatabase.getDatabase(carContext)
+    private val tripHistoryRepository = TripHistoryRepository(db.tripHistoryDao())
     private val routingRepository = RoutingRepository()
 
     private var currentQuery: String = ""
@@ -121,6 +125,7 @@ class CarSearchScreen(
 
             result.onSuccess { route ->
                 isCalculatingRoute = false
+                tripHistoryRepository.recordTrip(startLoc, destination, TravelMode.CAR)
                 NavigationStateHolder.startNavigation(route)
                 surfaceRenderer.updateRoute(route)
             }.onFailure { error ->

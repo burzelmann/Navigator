@@ -53,8 +53,10 @@
   - **Automatische Regionen-Benennung:** Ortsnamenerkennung per Reverse-Geocoding.
   - **Verwaltungsmenü:** Einzelne Regionen gezielt aktualisieren oder löschen.
 
-- ❤️ **Favoriten & Suche:**
-  - 100% offline gespeicherte Lieblingsorte und Favoriten-Routen in der lokalen Room-Datenbank.
+- ❤️ **Favoriten, Fahrtenverlauf & Parkplatz-Merker:**
+  - 100% offline gespeicherte Lieblingsorte, Favoriten-Routen und **Fahrtenverlauf (`TripHistoryEntity`)** in der lokalen Room-Datenbank (mit **Nochmal starten** & **Rückweg starten**).
+  - **On-Device Ziel-Vorschläge (`RoutePredictionUseCase`):** Lernt wiederkehrende Ziele nach Startort, Tageszeitfenster und Wochentag komplett lokal ohne Cloud oder Tracking.
+  - **Parkplatz automatisch merken:** Beim Beenden einer Autofahrt wird die letzte GPS-Position automatisch als blauer `P`-Pin auf der Karte gespeichert – mit Ein-Klick-Fußweg-Navigation **„Zum Auto zurück (Fußweg)“**.
   - Schnellsuchleiste im Favoriten-Tab mit Echtzeit-Filterung.
 
 - 👤 **Wissenschaftliches Nutzer-Profil:**
@@ -65,7 +67,8 @@
 - 🚗 **Android Auto Integration:**
   - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel, 4 kontrastreiche Nacht-Farbschemata mit semantischem Pixel-Remapping und positiver Polarität (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast* – helle Straßen auf dunklem Grund, 100 % offline-kompatibel), geschwindigkeits- und manöverabhängiger dynamischer Auto-Zoom sowie persistente Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
   - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Nacht-Farbschema, Kartenausrichtung, Auto-Zoom und Sprachausgabe.
-  - **Suche & Favoriten:** Direkte Zielsuche über die Auto-Tastatur sowie Ein-Klick-Routenstart aus gespeicherten Favoriten.
+  - **Suche, Favoriten & „Ziele“-Schnellmenü:** Direkte Zielsuche über die Auto-Tastatur, Ein-Klick-Routenstart aus Favoriten sowie das neue **`Ziele`-Menü (`CarDestinationsScreen`)** mit lokalen Ziel-Vorschlägen für die aktuelle Tageszeit, den letzten Fahrten und einem **Rückweg-Umschalter**.
+  - **Automatisches Parkplatz-Merken:** Beim Beenden der Android-Auto-Navigation wird die Fahrzeugposition lokal gespeichert und in der Smartphone-App als `P`-Marker samt Fußweg-Rückführung angezeigt.
   - **Turn-by-Turn-Routenführung:** Blaue Manöver-Karte mit Vektor-Pfeilen, nächstem Schritt, Live-ETA/Reststrecke, automatischer Zielankunft und stabiler Off-Route-Erkennung (Segment-Projektion + 3-fach-Hysterese & Cooldown gegen Fehl-Neuberechnungen auf Wald-/Überlandstrecken).
   - **Tacho, Tempolimit & Kreuzungs-Marker:** Kompaktes Geschwindigkeits- & Tempolimit-HUD (mit Warnfarbe bei Überschreitung) sowie kontrastreiche Karten-Marker für Ampeln, Stoppschilder, Vorfahrt-achten-Schilder und Kreisverkehre über die zugangsfreie OpenStreetMap 0.6 Map API (lokal gecacht).
   - **Autobahn-Verkehrsdaten (ohne API-Key):** Abruf von Sperrungen, Baustellen und Verkehrsmeldungen über die offizielle Autobahn GmbH API (`verkehr.autobahn.de`) mit Sprach-/Toast-Warnung und automatischem Re-Routing bei Vollsperrungen.

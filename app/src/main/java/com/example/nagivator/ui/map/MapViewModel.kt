@@ -21,6 +21,7 @@ import com.example.nagivator.data.repository.LocationRepository
 import com.example.nagivator.data.repository.OrientationRepository
 import com.example.nagivator.data.repository.PoiRepository
 import com.example.nagivator.data.repository.RoutingRepository
+import com.example.nagivator.data.repository.TripHistoryRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
@@ -87,6 +88,7 @@ data class MapUiState(
 class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val db = NagivatorDatabase.getDatabase(application)
     private val poiRepository = PoiRepository(db.poiDao(), db.savedRouteDao(), db.offlineRegionDao())
+    private val tripHistoryRepository = TripHistoryRepository(db.tripHistoryDao())
     private val routingRepository = RoutingRepository()
     private val locationRepository = LocationRepository(application)
     private val orientationRepository = OrientationRepository(application)
@@ -706,6 +708,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     val result = routingRepository.getRoute(updatedWaypoints, state.travelMode, footPref, carPref)
                     result.onSuccess { newRoute ->
                         NavigationStateHolder.startNavigation(newRoute)
+                        recordRouteToHistory(newRoute)
                         _uiState.update {
                             it.copy(
                                 activeRoute = newRoute,
@@ -728,7 +731,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        activeRoute?.let { NavigationStateHolder.startNavigation(it) }
+        activeRoute?.let {
+            NavigationStateHolder.startNavigation(it)
+            recordRouteToHistory(it)
+        }
         _uiState.update { 
             it.copy(
                 isNavigating = true,
@@ -736,6 +742,29 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 currentRouteStepIndex = 0
             ) 
         }
+    }
+
+    private fun recordRouteToHistory(route: RouteResult) {
+        if (route.waypoints.size < 2) return
+        val start = route.waypoints.first()
+        val dest = route.waypoints.last()
+        viewModelScope.launch {
+            tripHistoryRepository.recordTrip(start, dest, route.mode)
+        }
+    }
+
+    fun navigateToPoint(destination: LocationPoint, mode: TravelMode = _uiState.value.travelMode) {
+        val currentLoc = _uiState.value.currentLocation
+            ?: NavigationStateHolder.currentLocation.value
+            ?: LocationPoint(latitude = 52.5200, longitude = 13.4050, name = "Start")
+        _uiState.update {
+            it.copy(
+                selectedPoi = null,
+                isRoutePlanningMode = false,
+                travelMode = mode
+            )
+        }
+        calculateRoute(currentLoc, destination, mode)
     }
 
     fun toggleMute() {
@@ -748,6 +777,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopNavigation() {
+        val currentState = _uiState.value
+        val activeRoute = currentState.activeRoute
+        val currentLoc = currentState.currentLocation ?: NavigationStateHolder.currentLocation.value
+        if (activeRoute?.mode == TravelMode.CAR && currentLoc != null) {
+            val destLabel = activeRoute.waypoints.lastOrNull()?.name?.ifBlank { null } ?: "Geparktes Auto"
+            userSettingsRepository.saveParkedCar(
+                latitude = currentLoc.latitude,
+                longitude = currentLoc.longitude,
+                label = destLabel
+            )
+        }
         NavigationStateHolder.stopNavigation()
         _uiState.update { 
             it.copy(

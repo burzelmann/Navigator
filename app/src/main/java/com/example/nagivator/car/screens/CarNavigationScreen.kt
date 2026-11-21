@@ -27,6 +27,7 @@ import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.data.repository.TrafficRepository
+import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
@@ -434,6 +435,16 @@ class CarNavigationScreen(
     }
 
     private fun endNavigation() {
+        val currentLoc = NavigationStateHolder.currentLocation.value
+        val activeRoute = NavigationStateHolder.activeRoute.value
+        if (currentLoc != null) {
+            val destLabel = activeRoute?.waypoints?.lastOrNull()?.name?.ifBlank { null } ?: "Geparktes Auto"
+            UserSettingsRepository.getInstance(carContext).saveParkedCar(
+                latitude = currentLoc.latitude,
+                longitude = currentLoc.longitude,
+                label = destLabel
+            )
+        }
         NavigationStateHolder.stopNavigation()
         surfaceRenderer.updateRoute(null)
         screenManager.pop()

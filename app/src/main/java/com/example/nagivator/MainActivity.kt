@@ -120,6 +120,10 @@ fun NagivatorApp(isDarkTheme: Boolean) {
                             mapViewModel.loadSavedRouteEntity(routeEntity)
                             currentDestination = AppDestinations.MAP
                         },
+                        onNavigateToPoint = { point, mode ->
+                            mapViewModel.navigateToPoint(point, mode)
+                            currentDestination = AppDestinations.MAP
+                        },
                         modifier = Modifier.padding(innerPadding)
                     )
                 }

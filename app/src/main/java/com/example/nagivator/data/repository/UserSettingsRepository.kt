@@ -22,6 +22,13 @@ enum class MapColorScheme(val label: String, val description: String) {
     HIGH_CONTRAST("Hochkontrast", "Maximale Straßenerkennung")
 }
 
+data class ParkedCarLocation(
+    val latitude: Double,
+    val longitude: Double,
+    val timestampMs: Long,
+    val label: String = "Geparktes Auto"
+)
+
 data class UserSettings(
     val footSpeed: SpeedPreference = SpeedPreference.NORMAL,
     val carSpeed: SpeedPreference = SpeedPreference.NORMAL,
@@ -29,7 +36,8 @@ data class UserSettings(
     val mapColorScheme: MapColorScheme = MapColorScheme.GRAPHITE,
     val carMapPerspective: MapPerspective = MapPerspective.NORTH_UP,
     val dynamicZoomEnabled: Boolean = true,
-    val showRoadSignals: Boolean = true
+    val showRoadSignals: Boolean = true,
+    val parkedCar: ParkedCarLocation? = null
 )
 
 class UserSettingsRepository private constructor(context: Context) : SharedPreferences.OnSharedPreferenceChangeListener {
@@ -54,6 +62,14 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val perspectiveName = prefs.getString("car_map_perspective", MapPerspective.NORTH_UP.name)
         val dynamicZoom = prefs.getBoolean("dynamic_zoom_enabled", true)
         val showRoadSignals = prefs.getBoolean("show_road_signals", true)
+        val parkedCar = if (prefs.contains("parked_car_lat") && prefs.contains("parked_car_lon")) {
+            ParkedCarLocation(
+                latitude = prefs.getFloat("parked_car_lat", 0f).toDouble(),
+                longitude = prefs.getFloat("parked_car_lon", 0f).toDouble(),
+                timestampMs = prefs.getLong("parked_car_ts", 0L),
+                label = prefs.getString("parked_car_label", "Geparktes Auto") ?: "Geparktes Auto"
+            )
+        } else null
 
         val foot = try {
             SpeedPreference.valueOf(footName ?: SpeedPreference.NORMAL.name)
@@ -92,7 +108,8 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             mapColorScheme = scheme,
             carMapPerspective = perspective,
             dynamicZoomEnabled = dynamicZoom,
-            showRoadSignals = showRoadSignals
+            showRoadSignals = showRoadSignals,
+            parkedCar = parkedCar
         )
     }
 
@@ -129,6 +146,33 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     fun setShowRoadSignals(enabled: Boolean) {
         prefs.edit().putBoolean("show_road_signals", enabled).apply()
         _settings.update { it.copy(showRoadSignals = enabled) }
+    }
+
+    fun saveParkedCar(
+        latitude: Double,
+        longitude: Double,
+        label: String = "Geparktes Auto",
+        timestampMs: Long = System.currentTimeMillis()
+    ) {
+        prefs.edit()
+            .putFloat("parked_car_lat", latitude.toFloat())
+            .putFloat("parked_car_lon", longitude.toFloat())
+            .putLong("parked_car_ts", timestampMs)
+            .putString("parked_car_label", label)
+            .apply()
+        _settings.update {
+            it.copy(parkedCar = ParkedCarLocation(latitude, longitude, timestampMs, label))
+        }
+    }
+
+    fun clearParkedCar() {
+        prefs.edit()
+            .remove("parked_car_lat")
+            .remove("parked_car_lon")
+            .remove("parked_car_ts")
+            .remove("parked_car_label")
+            .apply()
+        _settings.update { it.copy(parkedCar = null) }
     }
 
     companion object {
