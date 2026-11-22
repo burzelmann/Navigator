@@ -63,6 +63,10 @@ object NavigationStateHolder {
         _isMuted.value = !_isMuted.value
     }
 
+    fun setMuted(muted: Boolean) {
+        _isMuted.value = muted
+    }
+
     fun updateRoadContext(speedLimitKmh: Int?, signals: List<RoadSignal>) {
         if (speedLimitKmh != null) {
             _currentSpeedLimitKmh.value = speedLimitKmh

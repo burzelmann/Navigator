@@ -399,8 +399,9 @@ class CarNavigationScreen(
                 Action.Builder()
                     .setTitle(if (isMuted) "Ton an" else "Stumm")
                     .setOnClickListener {
-                        NavigationStateHolder.toggleMute()
-                        voiceGuidance.setMuted(NavigationStateHolder.isMuted.value)
+                        val nextMuted = !NavigationStateHolder.isMuted.value
+                        UserSettingsRepository.getInstance(carContext).setVoiceMuted(nextMuted)
+                        voiceGuidance.setMuted(nextMuted)
                         invalidate()
                     }
                     .build()

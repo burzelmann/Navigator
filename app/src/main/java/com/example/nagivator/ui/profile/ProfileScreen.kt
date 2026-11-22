@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.domain.model.SpeedPreference
@@ -209,6 +210,59 @@ fun ProfileScreen(
                         checked = settings.showRoadSignals,
                         onCheckedChange = { viewModel.setShowRoadSignals(it) }
                     )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            text = "Sprachausgabe (Turn-by-Turn)",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = if (settings.voiceMuted) "Stummgeschaltet (Synchron mit Android Auto)" else "Aktiv (Synchron mit Android Auto)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = !settings.voiceMuted,
+                        onCheckedChange = { enabled -> viewModel.setVoiceMuted(!enabled) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = "Kartenausrichtung (Android Auto)",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = "Wird für künftige Fahrten gespeichert",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = settings.carMapPerspective == MapPerspective.NORTH_UP,
+                        onClick = { viewModel.setCarMapPerspective(MapPerspective.NORTH_UP) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                    ) {
+                        Text("Norden oben")
+                    }
+                    SegmentedButton(
+                        selected = settings.carMapPerspective == MapPerspective.HEADING_UP,
+                        onClick = { viewModel.setCarMapPerspective(MapPerspective.HEADING_UP) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    ) {
+                        Text("Fahrtrichtung")
+                    }
                 }
             }
         }

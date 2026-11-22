@@ -52,27 +52,77 @@ val OsmDeTileSource = XYTileSource(
     "© OpenStreetMap-Mitwirkende"
 )
 
-private class SemanticNightOsmTileSource(
-    private val scheme: MapColorScheme
+private class StyleStampedBitmapDrawable(
+    bitmap: Bitmap,
+    val styleKey: String,
+    private val activeStyleKeyProvider: () -> String,
+    private val activeBackgroundColorProvider: () -> Int,
+    private val onStaleTileDrawn: (String) -> Unit
+) : BitmapDrawable(null, bitmap) {
+    private val fallbackPaint = Paint()
+
+    override fun draw(canvas: Canvas) {
+        val expected = activeStyleKeyProvider()
+        if (styleKey != expected) {
+            fallbackPaint.color = activeBackgroundColorProvider()
+            canvas.drawRect(bounds, fallbackPaint)
+            onStaleTileDrawn(expected)
+            return
+        }
+        super.draw(canvas)
+    }
+}
+
+private class ThemedOsmDeTileSource(
+    initialDark: Boolean,
+    initialScheme: MapColorScheme,
+    private val onStaleTileDrawn: (String) -> Unit
 ) : XYTileSource(
     "OSM_DE",
     0, 19, 256, ".png",
     arrayOf("https://tile.openstreetmap.de/"),
     "© OpenStreetMap-Mitwirkende"
 ) {
-    override fun getDrawable(aFilePath: String?): Drawable? {
-        val raw = super.getDrawable(aFilePath) as? BitmapDrawable ?: return null
-        val bmp = raw.bitmap ?: return raw
-        val styled = MapStyleHelper.transformNightBitmap(bmp, scheme)
-        return BitmapDrawable(null, styled)
+    @Volatile
+    private var isDark: Boolean = initialDark
+
+    @Volatile
+    private var scheme: MapColorScheme = initialScheme
+
+    val activeStyleKey: String
+        get() = if (isDark) "DARK_${scheme.name}" else "LIGHT"
+
+    val activeBackgroundColor: Int
+        get() = MapStyleHelper.canvasBackgroundColor(isDark, scheme)
+
+    fun updateStyle(dark: Boolean, colorScheme: MapColorScheme) {
+        isDark = dark
+        scheme = colorScheme
     }
 
-    override fun getDrawable(aFileInputStream: InputStream?): Drawable? {
-        val raw = super.getDrawable(aFileInputStream) as? BitmapDrawable ?: return null
-        val bmp = raw.bitmap ?: return raw
-        val styled = MapStyleHelper.transformNightBitmap(bmp, scheme)
-        return BitmapDrawable(null, styled)
+    private fun wrapDrawable(raw: Drawable?): Drawable? {
+        val bmpDrawable = raw as? BitmapDrawable ?: return raw
+        val bmp = bmpDrawable.bitmap ?: return raw
+        val darkSnapshot = isDark
+        val schemeSnapshot = scheme
+        val keySnapshot = if (darkSnapshot) "DARK_${schemeSnapshot.name}" else "LIGHT"
+        val styledBmp = if (darkSnapshot) {
+            MapStyleHelper.transformNightBitmap(bmp, schemeSnapshot)
+        } else {
+            bmp
+        }
+        return StyleStampedBitmapDrawable(
+            bitmap = styledBmp,
+            styleKey = keySnapshot,
+            activeStyleKeyProvider = { activeStyleKey },
+            activeBackgroundColorProvider = { activeBackgroundColor },
+            onStaleTileDrawn = onStaleTileDrawn
+        )
     }
+
+    override fun getDrawable(aFilePath: String?): Drawable? = wrapDrawable(super.getDrawable(aFilePath))
+
+    override fun getDrawable(aFileInputStream: InputStream?): Drawable? = wrapDrawable(super.getDrawable(aFileInputStream))
 }
 
 // Global bitmap cache to avoid memory allocations and GC thrashing
@@ -109,16 +159,41 @@ fun OsmMapView(
     val roadSignals by NavigationStateHolder.roadSignals.collectAsState()
     val trafficIncidents by NavigationStateHolder.activeTrafficIncidents.collectAsState()
 
+    val userSettings by remember {
+        UserSettingsRepository.getInstance(context).settings
+    }.collectAsState()
+
+    val lastClearedStyleKey = remember { arrayOf("") }
+    lateinit var mapViewRef: MapView
+
+    val themedTileSource = remember {
+        ThemedOsmDeTileSource(
+            initialDark = isDarkTheme,
+            initialScheme = userSettings.mapColorScheme,
+            onStaleTileDrawn = { expectedStyle ->
+                if (lastClearedStyleKey[0] != expectedStyle) {
+                    lastClearedStyleKey[0] = expectedStyle
+                    mapViewRef.post {
+                        mapViewRef.tileProvider.clearTileCache()
+                        mapViewRef.invalidate()
+                    }
+                }
+            }
+        )
+    }
+
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(OsmDeTileSource)
+            setTileSource(themedTileSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
 
             clipToPadding = false
             clipChildren = false
 
-            overlayManager.tilesOverlay.setLoadingBackgroundColor(Color.parseColor("#F4FAFC"))
+            overlayManager.tilesOverlay.setLoadingBackgroundColor(
+                MapStyleHelper.canvasBackgroundColor(isDarkTheme, userSettings.mapColorScheme)
+            )
             overlayManager.tilesOverlay.setLoadingLineColor(Color.TRANSPARENT)
 
             isVerticalMapRepetitionEnabled = false
@@ -129,6 +204,7 @@ fun OsmMapView(
             controller.setCenter(initialCenter)
         }
     }
+    mapViewRef = mapView
 
     val rotationGestureOverlay = remember {
         RotationGestureOverlay(mapView).apply {
@@ -136,19 +212,14 @@ fun OsmMapView(
         }
     }
 
-    val userSettings by remember {
-        UserSettingsRepository.getInstance(context).settings
-    }.collectAsState()
-
     LaunchedEffect(isDarkTheme, userSettings.mapColorScheme) {
+        themedTileSource.updateStyle(isDarkTheme, userSettings.mapColorScheme)
+        lastClearedStyleKey[0] = ""
         mapView.overlayManager.tilesOverlay.setColorFilter(null)
         mapView.overlayManager.tilesOverlay.setLoadingBackgroundColor(
             MapStyleHelper.canvasBackgroundColor(isDarkTheme, userSettings.mapColorScheme)
         )
         mapView.tileProvider.clearTileCache()
-        mapView.setTileSource(
-            if (isDarkTheme) SemanticNightOsmTileSource(userSettings.mapColorScheme) else OsmDeTileSource
-        )
         mapView.invalidate()
     }
 

@@ -2,6 +2,7 @@ package com.example.nagivator.ui.profile
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.data.repository.UserSettings
@@ -35,5 +36,13 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     fun setShowRoadSignals(enabled: Boolean) {
         userSettingsRepository.setShowRoadSignals(enabled)
+    }
+
+    fun setCarMapPerspective(perspective: MapPerspective) {
+        userSettingsRepository.setCarMapPerspective(perspective)
+    }
+
+    fun setVoiceMuted(muted: Boolean) {
+        userSettingsRepository.setVoiceMuted(muted)
     }
 }

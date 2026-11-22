@@ -3,6 +3,7 @@ package com.example.nagivator.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.nagivator.car.surface.MapPerspective
+import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.SpeedPreference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,7 @@ data class UserSettings(
     val carMapPerspective: MapPerspective = MapPerspective.NORTH_UP,
     val dynamicZoomEnabled: Boolean = true,
     val showRoadSignals: Boolean = true,
+    val voiceMuted: Boolean = false,
     val parkedCar: ParkedCarLocation? = null
 )
 
@@ -48,10 +50,13 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(this)
+        NavigationStateHolder.setMuted(_settings.value.voiceMuted)
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        _settings.value = loadSettings()
+        val loaded = loadSettings()
+        _settings.value = loaded
+        NavigationStateHolder.setMuted(loaded.voiceMuted)
     }
 
     private fun loadSettings(): UserSettings {
@@ -62,6 +67,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val perspectiveName = prefs.getString("car_map_perspective", MapPerspective.NORTH_UP.name)
         val dynamicZoom = prefs.getBoolean("dynamic_zoom_enabled", true)
         val showRoadSignals = prefs.getBoolean("show_road_signals", true)
+        val voiceMuted = prefs.getBoolean("voice_muted", false)
         val parkedCar = if (prefs.contains("parked_car_lat") && prefs.contains("parked_car_lon")) {
             ParkedCarLocation(
                 latitude = prefs.getFloat("parked_car_lat", 0f).toDouble(),
@@ -109,6 +115,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             carMapPerspective = perspective,
             dynamicZoomEnabled = dynamicZoom,
             showRoadSignals = showRoadSignals,
+            voiceMuted = voiceMuted,
             parkedCar = parkedCar
         )
     }
@@ -146,6 +153,12 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     fun setShowRoadSignals(enabled: Boolean) {
         prefs.edit().putBoolean("show_road_signals", enabled).apply()
         _settings.update { it.copy(showRoadSignals = enabled) }
+    }
+
+    fun setVoiceMuted(muted: Boolean) {
+        prefs.edit().putBoolean("voice_muted", muted).apply()
+        NavigationStateHolder.setMuted(muted)
+        _settings.update { it.copy(voiceMuted = muted) }
     }
 
     fun saveParkedCar(

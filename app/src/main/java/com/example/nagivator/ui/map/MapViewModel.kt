@@ -130,11 +130,20 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            userSettingsRepository.settings.collect {
-                if (_uiState.value.isRoutePlanningMode && _uiState.value.plannedWaypoints.size >= 2) {
-                    calculatePlannedRoute()
-                } else if (_uiState.value.selectedPoi != null) {
-                    _uiState.value.selectedPoi?.let { calculateRouteTo(it) }
+            var lastFootSpeed = userSettingsRepository.settings.value.footSpeed
+            var lastCarSpeed = userSettingsRepository.settings.value.carSpeed
+            userSettingsRepository.settings.collect { settings ->
+                if (_uiState.value.isMuted != settings.voiceMuted) {
+                    _uiState.update { it.copy(isMuted = settings.voiceMuted) }
+                }
+                if (settings.footSpeed != lastFootSpeed || settings.carSpeed != lastCarSpeed) {
+                    lastFootSpeed = settings.footSpeed
+                    lastCarSpeed = settings.carSpeed
+                    if (_uiState.value.isRoutePlanningMode && _uiState.value.plannedWaypoints.size >= 2) {
+                        calculatePlannedRoute()
+                    } else if (_uiState.value.selectedPoi != null) {
+                        _uiState.value.selectedPoi?.let { calculateRouteTo(it) }
+                    }
                 }
             }
         }
@@ -775,8 +784,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleMute() {
-        NavigationStateHolder.toggleMute()
-        _uiState.update { it.copy(isMuted = !it.isMuted) }
+        val nextMuted = !userSettingsRepository.settings.value.voiceMuted
+        userSettingsRepository.setVoiceMuted(nextMuted)
+        _uiState.update { it.copy(isMuted = nextMuted) }
     }
 
     fun toggleOverviewMode() {
