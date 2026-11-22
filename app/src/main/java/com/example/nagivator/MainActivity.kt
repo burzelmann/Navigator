@@ -32,9 +32,6 @@ import com.example.nagivator.ui.map.MapScreen
 import com.example.nagivator.ui.map.MapViewModel
 import com.example.nagivator.ui.profile.ProfileScreen
 import com.example.nagivator.ui.theme.NagivatorTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import org.osmdroid.config.Configuration
 
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -42,20 +39,6 @@ import androidx.compose.ui.platform.LocalContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Configure osmdroid user agent & cache
-        val osmConfig = Configuration.getInstance()
-        osmConfig.userAgentValue = "Nagivator/1.0 (Android App; com.verhuelsdonk.navigator)"
-        osmConfig.tileFileSystemCacheMaxBytes = 500L * 1024L * 1024L
-        osmConfig.tileFileSystemCacheTrimBytes = 400L * 1024L * 1024L
-
-        // Load preferences asynchronously on Dispatchers.IO to prevent main thread disk I/O blocking
-        lifecycleScope.launch(Dispatchers.IO) {
-            osmConfig.load(
-                applicationContext,
-                getSharedPreferences("osmdroid_pref", MODE_PRIVATE)
-            )
-        }
 
         enableEdgeToEdge()
         setContent {

@@ -45,7 +45,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.platform.LocalContext
-import org.osmdroid.views.MapView
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -92,7 +91,8 @@ fun MapScreen(
     val pois by viewModel.pois.collectAsState()
     val allOfflineRegions by viewModel.allOfflineRegions.collectAsState()
     val azimuthDegrees by viewModel.azimuthDegrees.collectAsState()
-    var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
+    var mapController by remember { mutableStateOf<MapLibreController?>(null) }
+    var mapBearing by remember { mutableStateOf(0f) }
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -155,8 +155,8 @@ fun MapScreen(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // 1. Map View
-        OsmMapView(
+        // 1. Native GPU Vector Map View (MapLibre + OpenFreeMap)
+        MapLibreMapView(
             modifier = Modifier.fillMaxSize(),
             currentLocation = uiState.currentLocation,
             azimuthDegrees = azimuthDegrees,
@@ -169,25 +169,28 @@ fun MapScreen(
             alternativeRoutes = uiState.alternativeRoutes,
             selectedPoi = uiState.selectedPoi,
             onSelectAlternativeRoute = { viewModel.selectAlternativeRoute(it) },
-            onPoiClick = { poi -> 
+            onPoiClick = { poi ->
                 if (uiState.isRoutePlanningMode) {
                     viewModel.addWaypoint(LocationPoint(poi.latitude, poi.longitude, poi.displayTitle))
                 } else {
-                    viewModel.selectPoi(poi) 
+                    viewModel.selectPoi(poi)
                 }
             },
-            onMapClick = { geoPoint ->
+            onMapClick = { lat, lon ->
                 if (uiState.isRoutePlanningMode) {
-                    viewModel.addWaypoint(LocationPoint(geoPoint.latitude, geoPoint.longitude, "Wegpunkt"))
+                    viewModel.addWaypoint(LocationPoint(lat, lon, "Wegpunkt"))
                 } else {
-                    viewModel.onMapSingleTap(geoPoint.latitude, geoPoint.longitude)
+                    viewModel.onMapSingleTap(lat, lon)
                 }
             },
-            onMapLongClick = { geoPoint ->
-                viewModel.onMapLongClick(geoPoint.latitude, geoPoint.longitude)
+            onMapLongClick = { lat, lon ->
+                viewModel.onMapLongClick(lat, lon)
             },
-            onMapReady = { mapView ->
-                mapViewInstance = mapView
+            onBearingChanged = { bearing ->
+                mapBearing = bearing
+            },
+            onMapReady = { controller ->
+                mapController = controller
             }
         )
 
@@ -198,15 +201,12 @@ fun MapScreen(
                 currentStepIndex = uiState.currentRouteStepIndex,
                 isMuted = uiState.isMuted,
                 isOverviewMode = uiState.isOverviewMode,
-                mapOrientation = mapViewInstance?.mapOrientation ?: 0f,
+                mapOrientation = mapBearing,
                 bottomPadding = bottomPadding,
                 onToggleMute = { viewModel.toggleMute() },
                 onToggleOverviewMode = { viewModel.toggleOverviewMode() },
                 onResetNorth = {
-                    mapViewInstance?.let { mapView ->
-                        mapView.mapOrientation = 0f
-                        mapView.invalidate()
-                    }
+                    mapController?.resetNorth()
                 },
                 onStopNavigation = { viewModel.stopNavigation() }
             )
@@ -363,10 +363,7 @@ fun MapScreen(
             ) {
                 FloatingActionButton(
                     onClick = {
-                        mapViewInstance?.let { mapView ->
-                            mapView.mapOrientation = 0f
-                            mapView.invalidate()
-                        }
+                        mapController?.resetNorth()
                     },
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary,
@@ -375,7 +372,7 @@ fun MapScreen(
                     Icon(
                         imageVector = Icons.Default.Explore,
                         contentDescription = "Karte nach Norden ausrichten",
-                        modifier = Modifier.rotate(-(mapViewInstance?.mapOrientation ?: 0f))
+                        modifier = Modifier.rotate(-mapBearing)
                     )
                 }
 
@@ -774,14 +771,14 @@ fun MapScreen(
                                                 trailingContent = {
                                                     Row {
                                                         IconButton(onClick = {
-                                                            mapViewInstance?.let { mapView ->
-                                                                viewModel.updateOfflineRegion(context, mapView, region)
+                                                            mapController?.let { controller ->
+                                                                viewModel.updateOfflineRegion(context, controller, region)
                                                             }
                                                         }) {
                                                             Icon(Icons.Default.Refresh, contentDescription = "Aktualisieren", tint = MaterialTheme.colorScheme.primary)
                                                         }
                                                         IconButton(onClick = {
-                                                            viewModel.deleteOfflineRegion(context, mapViewInstance, region)
+                                                            viewModel.deleteOfflineRegion(context, mapController, region)
                                                         }) {
                                                             Icon(Icons.Default.Delete, contentDescription = "Löschen", tint = MaterialTheme.colorScheme.error)
                                                         }
@@ -797,8 +794,8 @@ fun MapScreen(
                             Spacer(modifier = Modifier.height(20.dp))
                             Button(
                                 onClick = {
-                                    mapViewInstance?.let { mapView ->
-                                        viewModel.startOfflineMapDownload(context, mapView)
+                                    mapController?.let { controller ->
+                                        viewModel.startOfflineMapDownload(context, controller)
                                     }
                                 },
                                 shape = RoundedCornerShape(16.dp),
@@ -813,7 +810,7 @@ fun MapScreen(
 
                             OutlinedButton(
                                 onClick = {
-                                    viewModel.clearOfflineTileCache(context, mapViewInstance)
+                                    viewModel.clearOfflineTileCache(context, mapController)
                                 },
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
@@ -891,8 +888,8 @@ fun MapScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            mapViewInstance?.let { mapView ->
-                                viewModel.confirmOfflineMapDownload(context, mapView, regionNameInput)
+                            mapController?.let { controller ->
+                                viewModel.confirmOfflineMapDownload(context, controller, regionNameInput)
                             }
                         },
                         shape = RoundedCornerShape(16.dp)

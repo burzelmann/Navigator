@@ -1,22 +1,29 @@
 package com.example.nagivator.car.surface
 
+import android.app.Presentation
+import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.os.Handler
-import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
-import android.view.Surface
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.car.app.CarContext
 import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.data.repository.RoadContextRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
@@ -26,134 +33,208 @@ import com.example.nagivator.domain.model.RoadSignalType
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.TrafficIncident
 import com.example.nagivator.domain.model.TrafficIncidentType
-import com.example.nagivator.ui.map.MapStyleHelper
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.ln
+import com.example.nagivator.ui.map.MapLibreStyleHelper
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.math.tan
 
 enum class MapPerspective {
     NORTH_UP,
     HEADING_UP
 }
 
+private const val CAR_SRC_ROUTE = "car-route-src"
+private const val CAR_LYR_ROUTE_CASING = "car-route-casing"
+private const val CAR_LYR_ROUTE_CORE = "car-route-core"
+private const val CAR_SRC_DEST = "car-dest-src"
+private const val CAR_LYR_DEST = "car-dest-lyr"
+private const val CAR_SRC_SIGNALS = "car-signals-src"
+private const val CAR_LYR_SIGNALS = "car-signals-lyr"
+private const val CAR_SRC_VEHICLE = "car-vehicle-src"
+private const val CAR_LYR_VEHICLE = "car-vehicle-lyr"
+
+private const val CAR_IMG_VEHICLE = "car-img-vehicle"
+private const val CAR_IMG_DEST = "car-img-dest"
+private const val CAR_IMG_LIGHT = "car-img-light"
+private const val CAR_IMG_STOP = "car-img-stop"
+private const val CAR_IMG_GIVEWAY = "car-img-giveway"
+private const val CAR_IMG_ROUNDABOUT = "car-img-roundabout"
+private const val CAR_IMG_CLOSURE = "car-img-closure"
+private const val CAR_IMG_WARN = "car-img-warn"
+
+/**
+ * Android Auto SurfaceCallback backed by MapLibre Native GPU vector rendering
+ * inside a VirtualDisplay + Presentation (TextureView mode) with a crisp native HUD overlay.
+ */
 class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallback {
 
-    private var surface: Surface? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
+
+    private var virtualDisplay: VirtualDisplay? = null
+    private var presentation: Presentation? = null
+    private var mapView: MapView? = null
+    private var mapLibreMap: MapLibreMap? = null
+    private var loadedStyle: Style? = null
+    private var hudOverlay: CarHudOverlayView? = null
+
     private var surfaceWidth = 800
     private var surfaceHeight = 480
     private var visibleArea: Rect? = null
     private var stableArea: Rect? = null
 
-    private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
     private var currentZoom = 16
     @Volatile
     private var perspective: MapPerspective = userSettingsRepository.settings.value.carMapPerspective
     private var manualZoomPauseUntilMs = 0L
 
-    private var startLocation: LocationPoint? = null
-    private var targetLocation: LocationPoint? = null
-    private var renderedLocation: LocationPoint? = null
-    private var transitionStartMs: Long = 0L
-    private val transitionDurationMs: Long = 1000L
-    private var isAnimating = false
-
+    private var currentLocation: LocationPoint? = null
     private var activeRoute: RouteResult? = null
     private var isFollowLocation = true
 
-    private val tileProvider = CarTileProvider(carContext) {
-        requestRender()
-    }
+    private var appliedIsDark: Boolean? = null
+    private var appliedScheme: MapColorScheme? = null
 
-    private val renderThread = HandlerThread("CarSurfaceRenderer").apply { start() }
-    private val renderHandler = Handler(renderThread.looper)
-    private var isRenderPending = false
+    override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
+        val surface = surfaceContainer.surface ?: return
+        val width = surfaceContainer.width.coerceAtLeast(400)
+        val height = surfaceContainer.height.coerceAtLeast(300)
+        val dpi = surfaceContainer.dpi.coerceAtLeast(160)
 
-    private val animationRunnable = object : Runnable {
-        override fun run() {
-            val start = startLocation
-            val target = targetLocation
-            if (surface == null || start == null || target == null) {
-                isAnimating = false
-                return
-            }
+        mainHandler.post {
+            teardownPresentation()
+            surfaceWidth = width
+            surfaceHeight = height
 
-            val elapsed = SystemClock.uptimeMillis() - transitionStartMs
-            val t = (elapsed.toFloat() / transitionDurationMs).coerceIn(0f, 1f)
-            renderedLocation = CarNavigationHelper.interpolateLocation(start, target, t)
-            render()
+            try {
+                MapLibre.getInstance(carContext.applicationContext)
+                val dm = carContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+                val vd = dm.createVirtualDisplay(
+                    "NagivatorCarMap",
+                    width,
+                    height,
+                    dpi,
+                    surface,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
+                )
+                virtualDisplay = vd
 
-            if (t < 1f) {
-                renderHandler.postDelayed(this, 33L)
-            } else {
-                isAnimating = false
+                val container = FrameLayout(carContext).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+
+                // TextureView mode is essential for smooth GPU compositing inside Android Auto VirtualDisplay
+                val options = MapLibreMapOptions.createFromAttributes(carContext)
+                    .textureMode(true)
+                    .compassEnabled(false)
+                    .logoEnabled(false)
+                    .attributionEnabled(false)
+
+                val mv = MapView(carContext, options).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                }
+                val hud = CarHudOverlayView(carContext).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                }
+
+                container.addView(mv)
+                container.addView(hud)
+
+                val pres = object : Presentation(carContext, vd.display) {}
+                pres.setContentView(container)
+                pres.show()
+
+                mv.onCreate(null)
+                mv.onStart()
+                mv.onResume()
+
+                presentation = pres
+                mapView = mv
+                hudOverlay = hud
+
+                mv.getMapAsync { map ->
+                    map.uiSettings.apply {
+                        isCompassEnabled = false
+                        isLogoEnabled = false
+                        isAttributionEnabled = false
+                    }
+                    mapLibreMap = map
+                    applyThemeAndStyle(forceReload = true)
+                    syncCamera(animate = false)
+                }
+            } catch (_: Exception) {
+                // Prevent host crash if surface becomes invalid mid-setup
             }
         }
     }
 
-    // Paints
-    private val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG)
-
-    private val routeHaloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 20f
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-        color = Color.parseColor("#00363D")
-    }
-
-    private val routeCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 12f
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-        color = Color.parseColor("#00B8D4")
-    }
-
-    private val vehicleHaloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.parseColor("#4400B8D4")
-    }
-
-    private val vehicleBodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.parseColor("#00838F")
-    }
-
-    private val vehicleArrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.WHITE
-    }
-
-    private val destPinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.parseColor("#D32F2F")
-    }
-
-    override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
-        surface = surfaceContainer.surface
-        surfaceWidth = surfaceContainer.width.coerceAtLeast(400)
-        surfaceHeight = surfaceContainer.height.coerceAtLeast(300)
-        requestRender()
-    }
-
     override fun onVisibleAreaChanged(visibleArea: Rect) {
         this.visibleArea = visibleArea
-        requestRender()
+        mainHandler.post {
+            hudOverlay?.updateSafeAreas(visibleArea, stableArea)
+            syncCamera(animate = false)
+        }
     }
 
     override fun onStableAreaChanged(stableArea: Rect) {
         this.stableArea = stableArea
-        requestRender()
+        mainHandler.post {
+            hudOverlay?.updateSafeAreas(visibleArea, stableArea)
+            syncCamera(animate = false)
+        }
     }
 
     override fun onSurfaceDestroyed(surfaceContainer: SurfaceContainer) {
-        surface = null
-        renderHandler.removeCallbacks(animationRunnable)
-        isAnimating = false
+        mainHandler.post {
+            teardownPresentation()
+        }
+    }
+
+    private fun teardownPresentation() {
+        loadedStyle = null
+        mapLibreMap = null
+        appliedIsDark = null
+        appliedScheme = null
+        try {
+            mapView?.onPause()
+            mapView?.onStop()
+            mapView?.onDestroy()
+        } catch (_: Exception) {}
+        mapView = null
+        hudOverlay = null
+        try {
+            presentation?.dismiss()
+        } catch (_: Exception) {}
+        presentation = null
+        try {
+            virtualDisplay?.release()
+        } catch (_: Exception) {}
+        virtualDisplay = null
     }
 
     fun getPerspective(): MapPerspective = perspective
@@ -170,8 +251,8 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     }
 
     fun updateLocation(point: LocationPoint) {
-        renderHandler.post {
-            val stabilized = CarNavigationHelper.preserveBearingIfStationary(targetLocation, point)
+        mainHandler.post {
+            val stabilized = CarNavigationHelper.preserveBearingIfStationary(currentLocation, point)
             val settings = userSettingsRepository.settings.value
             if (settings.dynamicZoomEnabled && SystemClock.uptimeMillis() > manualZoomPauseUntilMs) {
                 val route = activeRoute
@@ -193,30 +274,19 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
                     distanceToManeuverMeters = distMeters
                 )
             }
-            val current = renderedLocation
-            if (current == null || !isFollowLocation) {
-                startLocation = stabilized
-                targetLocation = stabilized
-                renderedLocation = stabilized
-                if (isFollowLocation) {
-                    render()
-                }
-                return@post
-            }
-
-            startLocation = current
-            targetLocation = stabilized
-            transitionStartMs = SystemClock.uptimeMillis()
-            if (!isAnimating) {
-                isAnimating = true
-                renderHandler.post(animationRunnable)
-            }
+            currentLocation = stabilized
+            updateVehicleLayer()
+            syncCamera(animate = true)
+            hudOverlay?.updateSpeed(stabilized.speedMps, NavigationStateHolder.currentSpeedLimitKmh.value)
         }
     }
 
     fun updateRoute(route: RouteResult?) {
         activeRoute = route
-        requestRender()
+        mainHandler.post {
+            updateRouteLayer()
+            syncCamera(animate = true)
+        }
     }
 
     fun zoomIn() {
@@ -242,406 +312,433 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
     }
 
     fun requestRender() {
-        if (surface == null || isRenderPending) return
-        isRenderPending = true
-        renderHandler.post {
-            isRenderPending = false
-            render()
-        }
-    }
-
-    private fun render() {
-        val s = surface ?: return
-        if (!s.isValid) return
-
-        val canvas = try {
-            s.lockHardwareCanvas()
-        } catch (_: Exception) {
-            try {
-                s.lockCanvas(null)
-            } catch (_: Exception) {
-                null
-            }
-        } ?: return
-
-        try {
-            val settings = userSettingsRepository.settings.value
-            val isDark = when (settings.themeMode) {
-                AppThemeMode.SYSTEM -> carContext.isDarkMode
-                AppThemeMode.LIGHT -> false
-                AppThemeMode.DARK -> true
-            }
-            val scheme = settings.mapColorScheme
-            canvas.drawColor(MapStyleHelper.canvasBackgroundColor(isDark, scheme))
-
-            val loc = renderedLocation ?: targetLocation ?: LocationPoint(52.5200, 13.4050, "Berlin")
-            val centerLat = loc.latitude
-            val centerLon = loc.longitude
-            val zoom = currentZoom
-            val mode = perspective
-
-            val width = surfaceWidth.toFloat()
-            val height = surfaceHeight.toFloat()
-            val tileSize = 256f
-
-            val va = visibleArea
-            val pivotX = if (va != null && !va.isEmpty) va.centerX().toFloat() else width / 2f
-            val pivotY = if (va != null && !va.isEmpty) {
-                va.top + va.height() * (if (mode == MapPerspective.HEADING_UP) 0.68f else 0.5f)
-            } else {
-                height * (if (mode == MapPerspective.HEADING_UP) 0.68f else 0.5f)
-            }
-
-            val centerTx = lonToTileX(centerLon, zoom)
-            val centerTy = latToTileY(centerLat, zoom)
-
-            // 1. Render Map Tiles (expanded bounds for rotated HEADING_UP view)
-            tilePaint.colorFilter = null
-
-            val maxDx = maxOf(pivotX, width - pivotX)
-            val maxDy = maxOf(pivotY, height - pivotY)
-            val halfTilesX: Int
-            val halfTilesY: Int
-            if (mode == MapPerspective.HEADING_UP) {
-                val radiusTiles = (hypot(maxDx, maxDy) / tileSize).toInt() + 2
-                halfTilesX = radiusTiles
-                halfTilesY = radiusTiles
-            } else {
-                halfTilesX = (maxDx / tileSize).toInt() + 2
-                halfTilesY = (maxDy / tileSize).toInt() + 2
-            }
-
-            val minX = (centerTx - halfTilesX).toInt().coerceAtLeast(0)
-            val maxX = (centerTx + halfTilesX).toInt().coerceAtMost((1 shl zoom) - 1)
-            val minY = (centerTy - halfTilesY).toInt().coerceAtLeast(0)
-            val maxY = (centerTy + halfTilesY).toInt().coerceAtMost((1 shl zoom) - 1)
-
-            // Screen projection helper anchored at (pivotX, pivotY)
-            fun project(lat: Double, lon: Double): PointF {
-                val tx = lonToTileX(lon, zoom)
-                val ty = latToTileY(lat, zoom)
-                val px = pivotX + (tx - centerTx).toFloat() * tileSize
-                val py = pivotY + (ty - centerTy).toFloat() * tileSize
-                return PointF(px, py)
-            }
-
-            canvas.save()
-            if (mode == MapPerspective.HEADING_UP) {
-                canvas.rotate(-loc.bearing, pivotX, pivotY)
-            }
-
-            for (tx in minX..maxX) {
-                for (ty in minY..maxY) {
-                    val tileBitmap = tileProvider.getTile(zoom, tx, ty, isDark, scheme)
-                    val px = pivotX + (tx - centerTx).toFloat() * tileSize
-                    val py = pivotY + (ty - centerTy).toFloat() * tileSize
-
-                    if (tileBitmap != null) {
-                        canvas.drawBitmap(tileBitmap, px, py, tilePaint)
-                    }
-                }
-            }
-
-            // 2. Render Route Polyline
-            val route = activeRoute
-            if (route != null && route.geometryPoints.size >= 2) {
-                val path = Path()
-                route.geometryPoints.forEachIndexed { i, pt ->
-                    val p = project(pt.latitude, pt.longitude)
-                    if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
-                }
-                canvas.drawPath(path, routeHaloPaint)
-                canvas.drawPath(path, routeCorePaint)
-
-                // Destination Pin
-                val destPt = route.waypoints.lastOrNull() ?: route.geometryPoints.last()
-                val destProj = project(destPt.latitude, destPt.longitude)
-                canvas.drawCircle(destProj.x, destProj.y, 16f, destPinPaint)
-                canvas.drawCircle(destProj.x, destProj.y, 7f, vehicleArrowPaint)
-            }
-
-            // 2b. Render Road Signals (traffic lights, stop, give-way, roundabouts) & Traffic Incidents
-            val uprightRotation = if (mode == MapPerspective.HEADING_UP) loc.bearing else 0f
-            if (zoom >= 15 && settings.showRoadSignals) {
-                drawRoadSignals(canvas, NavigationStateHolder.roadSignals.value, ::project, uprightRotation)
-            }
-            drawTrafficIncidents(canvas, NavigationStateHolder.activeTrafficIncidents.value, ::project, uprightRotation)
-
-            canvas.restore()
-
-            // 3. Render Vehicle Location & Heading
-            canvas.drawCircle(pivotX, pivotY, 36f, vehicleHaloPaint)
-            canvas.drawCircle(pivotX, pivotY, 20f, vehicleBodyPaint)
-
-            // Vehicle Heading Arrow (points straight up in HEADING_UP, or true bearing in NORTH_UP)
-            canvas.save()
-            canvas.translate(pivotX, pivotY)
-            if (mode == MapPerspective.NORTH_UP) {
-                canvas.rotate(loc.bearing)
-            }
-            val arrowPath = Path().apply {
-                moveTo(0f, -14f)
-                lineTo(10f, 10f)
-                lineTo(0f, 5f)
-                lineTo(-10f, 10f)
-                close()
-            }
-            canvas.drawPath(arrowPath, vehicleArrowPaint)
-            canvas.restore()
-
-            // 4. Render Speed & Speed-Limit HUD Badge in bottom-right of stableArea
-            drawSpeedHud(
-                canvas = canvas,
-                speedMps = loc.speedMps,
-                speedLimitKmh = NavigationStateHolder.currentSpeedLimitKmh.value,
-                width = width,
-                height = height
+        mainHandler.post {
+            perspective = userSettingsRepository.settings.value.carMapPerspective
+            applyThemeAndStyle(forceReload = false)
+            updateSignalsLayer()
+            updateRouteLayer()
+            updateVehicleLayer()
+            syncCamera(animate = true)
+            hudOverlay?.updateSpeed(
+                currentLocation?.speedMps ?: 0f,
+                NavigationStateHolder.currentSpeedLimitKmh.value
             )
-
-        } finally {
-            try {
-                s.unlockCanvasAndPost(canvas)
-            } catch (_: Exception) {}
         }
-    }
-
-    private fun drawRoadSignals(
-        canvas: Canvas,
-        signals: List<RoadSignal>,
-        project: (Double, Double) -> PointF,
-        uprightRotation: Float
-    ) {
-        if (signals.isEmpty()) return
-        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            textSize = 8f
-        }
-
-        for (sig in signals) {
-            val pt = project(sig.latitude, sig.longitude)
-            if (pt.x < -40f || pt.x > surfaceWidth + 40f || pt.y < -40f || pt.y > surfaceHeight + 40f) continue
-
-            canvas.save()
-            canvas.translate(pt.x, pt.y)
-            if (uprightRotation != 0f) canvas.rotate(uprightRotation)
-
-            when (sig.type) {
-                RoadSignalType.TRAFFIC_SIGNALS -> {
-                    val box = RectF(-7.5f, -15f, 7.5f, 15f)
-                    fillPaint.color = Color.parseColor("#1E2228")
-                    canvas.drawRoundRect(box, 4f, 4f, fillPaint)
-                    strokePaint.color = Color.WHITE
-                    strokePaint.strokeWidth = 1.6f
-                    canvas.drawRoundRect(box, 4f, 4f, strokePaint)
-
-                    fillPaint.color = Color.parseColor("#FF3B30")
-                    canvas.drawCircle(0f, -8.5f, 3.2f, fillPaint)
-                    fillPaint.color = Color.parseColor("#FFCC00")
-                    canvas.drawCircle(0f, 0f, 3.2f, fillPaint)
-                    fillPaint.color = Color.parseColor("#34C759")
-                    canvas.drawCircle(0f, 8.5f, 3.2f, fillPaint)
-                }
-                RoadSignalType.STOP -> {
-                    val oct = Path()
-                    val r = 13f
-                    for (i in 0 until 8) {
-                        val angle = PI / 8.0 + i * PI / 4.0
-                        val x = (r * cos(angle)).toFloat()
-                        val y = (r * sin(angle)).toFloat()
-                        if (i == 0) oct.moveTo(x, y) else oct.lineTo(x, y)
-                    }
-                    oct.close()
-                    fillPaint.color = Color.parseColor("#D32F2F")
-                    canvas.drawPath(oct, fillPaint)
-                    strokePaint.color = Color.WHITE
-                    strokePaint.strokeWidth = 2f
-                    canvas.drawPath(oct, strokePaint)
-                    canvas.drawText("STOP", 0f, 3f, textPaint)
-                }
-                RoadSignalType.GIVE_WAY -> {
-                    val tri = Path().apply {
-                        moveTo(-13f, -10f)
-                        lineTo(13f, -10f)
-                        lineTo(0f, 13f)
-                        close()
-                    }
-                    fillPaint.color = Color.WHITE
-                    canvas.drawPath(tri, fillPaint)
-                    strokePaint.color = Color.parseColor("#D32F2F")
-                    strokePaint.strokeWidth = 3.5f
-                    canvas.drawPath(tri, strokePaint)
-                }
-                RoadSignalType.ROUNDABOUT -> {
-                    fillPaint.color = Color.parseColor("#1565C0")
-                    canvas.drawCircle(0f, 0f, 13f, fillPaint)
-                    strokePaint.color = Color.WHITE
-                    strokePaint.strokeWidth = 2.2f
-                    canvas.drawCircle(0f, 0f, 13f, strokePaint)
-                    strokePaint.strokeWidth = 2.6f
-                    canvas.drawCircle(0f, 0f, 6.2f, strokePaint)
-                }
-            }
-            canvas.restore()
-        }
-    }
-
-    private fun drawTrafficIncidents(
-        canvas: Canvas,
-        incidents: List<TrafficIncident>,
-        project: (Double, Double) -> PointF,
-        uprightRotation: Float
-    ) {
-        if (incidents.isEmpty()) return
-        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#111111")
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            textSize = 15f
-        }
-
-        for (inc in incidents) {
-            val pt = project(inc.latitude, inc.longitude)
-            if (pt.x < -40f || pt.x > surfaceWidth + 40f || pt.y < -40f || pt.y > surfaceHeight + 40f) continue
-
-            canvas.save()
-            canvas.translate(pt.x, pt.y)
-            if (uprightRotation != 0f) canvas.rotate(uprightRotation)
-
-            if (inc.type == TrafficIncidentType.CLOSURE || inc.isBlocked) {
-                fillPaint.color = Color.parseColor("#D32F2F")
-                canvas.drawCircle(0f, 0f, 15f, fillPaint)
-                strokePaint.color = Color.WHITE
-                strokePaint.strokeWidth = 2.2f
-                canvas.drawCircle(0f, 0f, 15f, strokePaint)
-                fillPaint.color = Color.WHITE
-                canvas.drawRect(-9f, -3f, 9f, 3f, fillPaint)
-            } else {
-                val tri = Path().apply {
-                    moveTo(0f, -15f)
-                    lineTo(15f, 12f)
-                    lineTo(-15f, 12f)
-                    close()
-                }
-                fillPaint.color = Color.parseColor("#FFC107")
-                canvas.drawPath(tri, fillPaint)
-                strokePaint.color = Color.parseColor("#D32F2F")
-                strokePaint.strokeWidth = 3f
-                canvas.drawPath(tri, strokePaint)
-                canvas.drawText("!", 0f, 9f, textPaint)
-            }
-            canvas.restore()
-        }
-    }
-
-    private fun drawSpeedHud(
-        canvas: Canvas,
-        speedMps: Float,
-        speedLimitKmh: Int?,
-        width: Float,
-        height: Float
-    ) {
-        val currentKmh = (speedMps * 3.6f).roundToInt().coerceAtLeast(0)
-        val isOverLimit = speedLimitKmh != null && speedLimitKmh > 0 && currentKmh > speedLimitKmh + 5
-
-        val anchor = stableArea?.takeIf { !it.isEmpty } ?: visibleArea?.takeIf { !it.isEmpty }
-        val rightEdge = (anchor?.right?.toFloat() ?: width) - 16f
-        val bottomEdge = (anchor?.bottom?.toFloat() ?: height) - 16f
-
-        val pillW = 74f
-        val pillH = 56f
-        val pillRect = RectF(rightEdge - pillW, bottomEdge - pillH, rightEdge, bottomEdge)
-
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-            color = if (isOverLimit) Color.parseColor("#E6C62828") else Color.parseColor("#E0161B22")
-        }
-        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 2f
-            color = if (isOverLimit) Color.parseColor("#FF8A80") else Color.parseColor("#6690A4AE")
-        }
-        val speedTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            textSize = 26f
-        }
-        val unitTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#CFD8DC")
-            textAlign = Paint.Align.CENTER
-            textSize = 11f
-        }
-
-        canvas.drawRoundRect(pillRect, 14f, 14f, bgPaint)
-        canvas.drawRoundRect(pillRect, 14f, 14f, borderPaint)
-        canvas.drawText(currentKmh.toString(), pillRect.centerX(), pillRect.top + 32f, speedTextPaint)
-        canvas.drawText("km/h", pillRect.centerX(), pillRect.bottom - 8f, unitTextPaint)
-
-        // Speed Limit Sign directly to the left of the speed pill
-        if (speedLimitKmh != null) {
-            val radius = 26f
-            val signCx = pillRect.left - 12f - radius
-            val signCy = pillRect.centerY()
-
-            val signFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.FILL
-                color = Color.WHITE
-            }
-            val signRing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = 5.5f
-                color = if (speedLimitKmh == RoadContextRepository.SPEED_LIMIT_UNLIMITED) {
-                    Color.parseColor("#78909C")
-                } else {
-                    Color.parseColor("#D32F2F")
-                }
-            }
-            canvas.drawCircle(signCx, signCy, radius, signFill)
-            canvas.drawCircle(signCx, signCy, radius - 2.75f, signRing)
-
-            if (speedLimitKmh == RoadContextRepository.SPEED_LIMIT_UNLIMITED) {
-                val slashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.parseColor("#455A64")
-                    strokeWidth = 2.5f
-                }
-                for (offset in listOf(-5f, 0f, 5f)) {
-                    canvas.drawLine(
-                        signCx - 12f + offset, signCy + 12f + offset * 0.4f,
-                        signCx + 12f + offset, signCy - 12f + offset * 0.4f,
-                        slashPaint
-                    )
-                }
-            } else {
-                val limitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.parseColor("#111111")
-                    textAlign = Paint.Align.CENTER
-                    typeface = Typeface.DEFAULT_BOLD
-                    textSize = if (speedLimitKmh >= 100) 18f else 22f
-                }
-                canvas.drawText(speedLimitKmh.toString(), signCx, signCy + 7.5f, limitPaint)
-            }
-        }
-    }
-
-    private fun lonToTileX(lon: Double, zoom: Int): Double =
-        (lon + 180.0) / 360.0 * (1 shl zoom)
-
-    private fun latToTileY(lat: Double, zoom: Int): Double {
-        val rad = Math.toRadians(lat)
-        return (1.0 - ln(tan(rad) + 1.0 / cos(rad)) / Math.PI) / 2.0 * (1 shl zoom)
     }
 
     fun destroy() {
-        surface = null
-        renderHandler.removeCallbacks(animationRunnable)
-        isAnimating = false
-        tileProvider.clear()
-        renderThread.quitSafely()
+        mainHandler.post {
+            teardownPresentation()
+        }
+    }
+
+    private fun resolveIsDark(): Boolean {
+        val themeMode = userSettingsRepository.settings.value.themeMode
+        return when (themeMode) {
+            AppThemeMode.DARK -> true
+            AppThemeMode.LIGHT -> false
+            AppThemeMode.SYSTEM -> carContext.isDarkMode
+        }
+    }
+
+    private fun applyThemeAndStyle(forceReload: Boolean) {
+        val map = mapLibreMap ?: return
+        val isDark = resolveIsDark()
+        val scheme = userSettingsRepository.settings.value.mapColorScheme
+
+        if (!forceReload && appliedIsDark == isDark && loadedStyle?.isFullyLoaded == true) {
+            if (isDark && appliedScheme != scheme) {
+                MapLibreStyleHelper.applyNightColorScheme(loadedStyle!!, scheme)
+                appliedScheme = scheme
+            }
+            return
+        }
+
+        appliedIsDark = isDark
+        appliedScheme = scheme
+        val styleUrl = MapLibreStyleHelper.styleUrlFor(isDark)
+        map.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
+            if (isDark) {
+                MapLibreStyleHelper.applyNightColorScheme(style, scheme)
+            }
+            installCarLayers(style)
+            loadedStyle = style
+            updateRouteLayer()
+            updateSignalsLayer()
+            updateVehicleLayer()
+        }
+    }
+
+    private fun installCarLayers(style: Style) {
+        style.addImage(CAR_IMG_VEHICLE, createVehicleArrowBitmap())
+        style.addImage(CAR_IMG_DEST, createDestPinBitmap())
+        style.addImage(CAR_IMG_LIGHT, createCarTrafficLightBitmap())
+        style.addImage(CAR_IMG_STOP, createCarStopBitmap())
+        style.addImage(CAR_IMG_GIVEWAY, createCarGiveWayBitmap())
+        style.addImage(CAR_IMG_ROUNDABOUT, createCarRoundaboutBitmap())
+        style.addImage(CAR_IMG_CLOSURE, createCarIncidentBitmap(Color.parseColor("#D32F2F")))
+        style.addImage(CAR_IMG_WARN, createCarIncidentBitmap(Color.parseColor("#F57C00")))
+
+        style.addSource(GeoJsonSource(CAR_SRC_ROUTE))
+        style.addLayer(
+            LineLayer(CAR_LYR_ROUTE_CASING, CAR_SRC_ROUTE).withProperties(
+                PropertyFactory.lineColor("#00363D"),
+                PropertyFactory.lineWidth(12f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
+        style.addLayer(
+            LineLayer(CAR_LYR_ROUTE_CORE, CAR_SRC_ROUTE).withProperties(
+                PropertyFactory.lineColor("#00B8D4"),
+                PropertyFactory.lineWidth(7.5f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
+
+        style.addSource(GeoJsonSource(CAR_SRC_SIGNALS))
+        style.addLayer(
+            SymbolLayer(CAR_LYR_SIGNALS, CAR_SRC_SIGNALS).withProperties(
+                PropertyFactory.iconImage(Expression.get("icon")),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
+                PropertyFactory.iconSize(0.95f)
+            ).apply {
+                minZoom = 14.0f
+            }
+        )
+
+        style.addSource(GeoJsonSource(CAR_SRC_DEST))
+        style.addLayer(
+            SymbolLayer(CAR_LYR_DEST, CAR_SRC_DEST).withProperties(
+                PropertyFactory.iconImage(CAR_IMG_DEST),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
+                PropertyFactory.iconSize(0.9f)
+            )
+        )
+
+        style.addSource(GeoJsonSource(CAR_SRC_VEHICLE))
+        style.addLayer(
+            SymbolLayer(CAR_LYR_VEHICLE, CAR_SRC_VEHICLE).withProperties(
+                PropertyFactory.iconImage(CAR_IMG_VEHICLE),
+                PropertyFactory.iconRotate(Expression.get("bearing")),
+                PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
+                PropertyFactory.iconSize(1.0f)
+            )
+        )
+    }
+
+    private fun updateRouteLayer() {
+        val style = loadedStyle ?: return
+        if (!style.isFullyLoaded) return
+        val route = activeRoute
+        val routeSrc = style.getSourceAs<GeoJsonSource>(CAR_SRC_ROUTE)
+        val destSrc = style.getSourceAs<GeoJsonSource>(CAR_SRC_DEST)
+
+        if (route != null && route.geometryPoints.size >= 2) {
+            val pts = route.geometryPoints.map { Point.fromLngLat(it.longitude, it.latitude) }
+            routeSrc?.setGeoJson(FeatureCollection.fromFeatures(listOf(Feature.fromGeometry(LineString.fromLngLats(pts)))))
+            val dest = route.geometryPoints.last()
+            destSrc?.setGeoJson(
+                FeatureCollection.fromFeatures(listOf(Feature.fromGeometry(Point.fromLngLat(dest.longitude, dest.latitude))))
+            )
+        } else {
+            routeSrc?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            destSrc?.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+        }
+    }
+
+    private fun updateSignalsLayer() {
+        val style = loadedStyle ?: return
+        if (!style.isFullyLoaded) return
+        val src = style.getSourceAs<GeoJsonSource>(CAR_SRC_SIGNALS) ?: return
+        val features = mutableListOf<Feature>()
+
+        if (userSettingsRepository.settings.value.showRoadSignals) {
+            val signals: List<RoadSignal> = NavigationStateHolder.roadSignals.value
+            signals.forEach { sig ->
+                val icon = when (sig.type) {
+                    RoadSignalType.TRAFFIC_SIGNALS -> CAR_IMG_LIGHT
+                    RoadSignalType.STOP -> CAR_IMG_STOP
+                    RoadSignalType.GIVE_WAY -> CAR_IMG_GIVEWAY
+                    RoadSignalType.ROUNDABOUT -> CAR_IMG_ROUNDABOUT
+                }
+                features.add(
+                    Feature.fromGeometry(Point.fromLngLat(sig.longitude, sig.latitude)).apply {
+                        addStringProperty("icon", icon)
+                    }
+                )
+            }
+        }
+
+        val incidents: List<TrafficIncident> = NavigationStateHolder.activeTrafficIncidents.value
+        incidents.forEach { inc ->
+            val icon = if (inc.type == TrafficIncidentType.CLOSURE) CAR_IMG_CLOSURE else CAR_IMG_WARN
+            features.add(
+                Feature.fromGeometry(Point.fromLngLat(inc.longitude, inc.latitude)).apply {
+                    addStringProperty("icon", icon)
+                }
+            )
+        }
+        src.setGeoJson(FeatureCollection.fromFeatures(features))
+    }
+
+    private fun updateVehicleLayer() {
+        val style = loadedStyle ?: return
+        if (!style.isFullyLoaded) return
+        val src = style.getSourceAs<GeoJsonSource>(CAR_SRC_VEHICLE) ?: return
+        val loc = currentLocation ?: NavigationStateHolder.currentLocation.value
+        if (loc == null) {
+            src.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            return
+        }
+        val feat = Feature.fromGeometry(Point.fromLngLat(loc.longitude, loc.latitude)).apply {
+            addNumberProperty("bearing", loc.bearing.toDouble())
+        }
+        src.setGeoJson(FeatureCollection.fromFeatures(listOf(feat)))
+    }
+
+    private fun syncCamera(animate: Boolean) {
+        val map = mapLibreMap ?: return
+        val loc = currentLocation ?: NavigationStateHolder.currentLocation.value
+            ?: LocationPoint(latitude = 51.7732, longitude = 6.2924, name = "Start")
+
+        val safe = stableArea ?: visibleArea ?: Rect(0, 0, surfaceWidth, surfaceHeight)
+        val extraTopPad = if (perspective == MapPerspective.HEADING_UP) (safe.height() * 0.28f).toInt() else 0
+        val padLeft = safe.left.coerceAtLeast(0).toDouble()
+        val padTop = (safe.top + extraTopPad).coerceAtLeast(0).toDouble()
+        val padRight = (surfaceWidth - safe.right).coerceAtLeast(0).toDouble()
+        val padBottom = (surfaceHeight - safe.bottom).coerceAtLeast(0).toDouble()
+
+        val targetBearing = if (perspective == MapPerspective.HEADING_UP) loc.bearing.toDouble() else 0.0
+        val targetTilt = if (perspective == MapPerspective.HEADING_UP && activeRoute != null) 30.0 else 0.0
+        // Vector zoom level matches OSM visual scale closely at (currentZoom - 0.6)
+        val vectorZoom = (currentZoom - 0.5).coerceIn(10.0, 18.0)
+
+        val pos = CameraPosition.Builder()
+            .target(LatLng(loc.latitude, loc.longitude))
+            .zoom(vectorZoom)
+            .bearing(targetBearing)
+            .tilt(targetTilt)
+            .padding(padLeft, padTop, padRight, padBottom)
+            .build()
+
+        val update = CameraUpdateFactory.newCameraPosition(pos)
+        if (animate) {
+            map.easeCamera(update, 650)
+        } else {
+            map.moveCamera(update)
+        }
+    }
+
+    private fun createVehicleArrowBitmap(): Bitmap {
+        val size = 84
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+
+        val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#4400B8D4") }
+        canvas.drawCircle(c, c, 38f, halo)
+
+        val body = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#00838F") }
+        canvas.drawCircle(c, c, 24f, body)
+
+        val arrow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        val path = Path().apply {
+            moveTo(c, c - 15f)
+            lineTo(c + 11f, c + 10f)
+            lineTo(c, c + 5f)
+            lineTo(c - 11f, c + 10f)
+            close()
+        }
+        canvas.drawPath(path, arrow)
+        return bmp
+    }
+
+    private fun createDestPinBitmap(): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#D32F2F") }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+        canvas.drawCircle(c, c, 18f, fill)
+        canvas.drawCircle(c, c, 18f, stroke)
+        return bmp
+    }
+
+    private fun createCarTrafficLightBitmap(): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = Color.parseColor("#1E2228")
+        canvas.drawRoundRect(c - 11f, c - 22f, c + 11f, c + 22f, 6f, 6f, p)
+        p.color = Color.parseColor("#FF3B30")
+        canvas.drawCircle(c, c - 12f, 4.5f, p)
+        p.color = Color.parseColor("#FFCC00")
+        canvas.drawCircle(c, c, 4.5f, p)
+        p.color = Color.parseColor("#34C759")
+        canvas.drawCircle(c, c + 12f, 4.5f, p)
+        return bmp
+    }
+
+    private fun createCarStopBitmap(): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#D32F2F") }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        canvas.drawCircle(c, c, 18f, fill)
+        canvas.drawCircle(c, c, 18f, stroke)
+        return bmp
+    }
+
+    private fun createCarGiveWayBitmap(): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+        val tri = Path().apply {
+            moveTo(c - 18f, c - 13f)
+            lineTo(c + 18f, c - 13f)
+            lineTo(c, c + 18f)
+            close()
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#D32F2F")
+            style = Paint.Style.STROKE
+            strokeWidth = 4.5f
+        }
+        canvas.drawPath(tri, fill)
+        canvas.drawPath(tri, stroke)
+        return bmp
+    }
+
+    private fun createCarRoundaboutBitmap(): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1976D2") }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 3.5f
+        }
+        canvas.drawCircle(c, c, 18f, fill)
+        canvas.drawCircle(c, c, 10f, stroke)
+        return bmp
+    }
+
+    private fun createCarIncidentBitmap(color: Int): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val c = size / 2f
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.WHITE
+            textSize = 28f
+            textAlign = Paint.Align.CENTER
+            isFakeBoldText = true
+        }
+        canvas.drawCircle(c, c, 18f, fill)
+        val y = c - (text.descent() + text.ascent()) / 2f
+        canvas.drawText("!", c, y, text)
+        return bmp
+    }
+}
+
+/**
+ * Transparent overlay view drawn on top of the MapLibre TextureView inside the Android Auto
+ * Presentation, rendering the compact speedometer and speed-limit sign in the safe area.
+ */
+private class CarHudOverlayView(context: Context) : View(context) {
+    private var speedMps: Float = 0f
+    private var speedLimitKmh: Int? = null
+    private var visibleArea: Rect? = null
+    private var stableArea: Rect? = null
+
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+
+    fun updateSpeed(speedMps: Float, speedLimitKmh: Int?) {
+        this.speedMps = speedMps
+        this.speedLimitKmh = speedLimitKmh
+        invalidate()
+    }
+
+    fun updateSafeAreas(visible: Rect?, stable: Rect?) {
+        this.visibleArea = visible
+        this.stableArea = stable
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val safe = stableArea ?: visibleArea ?: Rect(0, 0, width, height)
+        val currentKmh = (speedMps * 3.6f).roundToInt().coerceAtLeast(0)
+        val limit = speedLimitKmh
+        val isOverLimit = limit != null && limit > 0 && currentKmh > limit + 5
+
+        val boxW = 76f
+        val boxH = 54f
+        val margin = 16f
+        val rightEdge = (safe.right - margin).coerceAtMost(width - margin)
+        val bottomEdge = (safe.bottom - margin).coerceAtMost(height - margin)
+
+        val speedRect = RectF(rightEdge - boxW, bottomEdge - boxH, rightEdge, bottomEdge)
+        bgPaint.color = if (isOverLimit) Color.parseColor("#D32F2F") else Color.parseColor("#DD1E242D")
+        canvas.drawRoundRect(speedRect, 14f, 14f, bgPaint)
+
+        textPaint.color = Color.WHITE
+        textPaint.textSize = 26f
+        canvas.drawText(currentKmh.toString(), speedRect.centerX(), speedRect.top + 31f, textPaint)
+
+        textPaint.color = if (isOverLimit) Color.parseColor("#FFCDD2") else Color.parseColor("#B0BEC5")
+        textPaint.textSize = 11f
+        canvas.drawText("km/h", speedRect.centerX(), speedRect.bottom - 8f, textPaint)
+
+        if (limit != null) {
+            val radius = 25f
+            val cx = speedRect.left - 12f - radius
+            val cy = speedRect.centerY()
+            bgPaint.color = Color.WHITE
+            canvas.drawCircle(cx, cy, radius, bgPaint)
+
+            strokePaint.color = if (limit == RoadContextRepository.SPEED_LIMIT_UNLIMITED) {
+                Color.parseColor("#78909C")
+            } else {
+                Color.parseColor("#D32F2F")
+            }
+            strokePaint.strokeWidth = 5.5f
+            canvas.drawCircle(cx, cy, radius - 2.5f, strokePaint)
+
+            textPaint.color = Color.parseColor("#111111")
+            textPaint.textSize = if (limit >= 100) 18f else 21f
+            val label = if (limit == RoadContextRepository.SPEED_LIMIT_UNLIMITED) "∞" else limit.toString()
+            val y = cy - (textPaint.descent() + textPaint.ascent()) / 2f
+            canvas.drawText(label, cx, y, textPaint)
+        }
     }
 }

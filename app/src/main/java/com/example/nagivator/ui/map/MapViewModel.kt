@@ -5,10 +5,17 @@ import android.content.Context
 import android.location.Location
 import java.io.File
 import kotlinx.coroutines.Dispatchers
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.cachemanager.CacheManager
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.views.MapView
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.offline.OfflineManager
+import org.maplibre.android.offline.OfflineRegion
+import org.maplibre.android.offline.OfflineRegionError
+import org.maplibre.android.offline.OfflineRegionStatus
+import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.tan
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.nagivator.data.local.NagivatorDatabase
@@ -820,18 +827,50 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val downloadTimeHistory = ArrayDeque<Pair<Long, Int>>()
 
-    fun prepareOfflineMapDownload(mapView: MapView) {
-        val cacheManager = CacheManager(mapView)
-        val boundingBox = mapView.boundingBox ?: return
-        val currentZoom = mapView.zoomLevelDouble.toInt().coerceIn(1, 18)
+    private fun estimateVectorTileCount(
+        minLat: Double,
+        maxLat: Double,
+        minLon: Double,
+        maxLon: Double,
+        minZoom: Int,
+        maxZoom: Int
+    ): Int {
+        var total = 0
+        val clampedMax = maxZoom.coerceAtMost(14) // OpenFreeMap vector tiles cap at z14 (overzoomed smoothly to z22)
+        for (z in minZoom.coerceAtMost(clampedMax)..clampedMax) {
+            val n = 1 shl z
+            val x1 = floor((minLon + 180.0) / 360.0 * n).toInt().coerceIn(0, n - 1)
+            val x2 = floor((maxLon + 180.0) / 360.0 * n).toInt().coerceIn(0, n - 1)
+            fun latToY(lat: Double): Int {
+                val rad = Math.toRadians(lat.coerceIn(-85.0511, 85.0511))
+                return floor((1.0 - ln(tan(rad) + 1.0 / cos(rad)) / Math.PI) / 2.0 * n).toInt().coerceIn(0, n - 1)
+            }
+            val y1 = latToY(maxLat)
+            val y2 = latToY(minLat)
+            total += (kotlin.math.abs(x2 - x1) + 1) * (kotlin.math.abs(y2 - y1) + 1)
+        }
+        return total.coerceAtLeast(1)
+    }
+
+    fun prepareOfflineMapDownload(controller: MapLibreController) {
+        val bounds = controller.visibleBounds()
+        val currentZoom = controller.currentZoom().toInt().coerceIn(8, 14)
         val minZoom = currentZoom
-        val maxZoom = 18
+        val maxZoom = 14
 
-        val totalTiles = cacheManager.possibleTilesInArea(boundingBox, minZoom, maxZoom)
-        val estMb = (totalTiles * 18.0) / 1024.0
+        val totalTiles = estimateVectorTileCount(
+            minLat = bounds.latitudeSouth,
+            maxLat = bounds.latitudeNorth,
+            minLon = bounds.longitudeWest,
+            maxLon = bounds.longitudeEast,
+            minZoom = minZoom,
+            maxZoom = maxZoom
+        )
+        // Vector tiles average ~25 KB each (far smaller than multi-zoom PNG pyramids)
+        val estMb = (totalTiles * 25.0) / 1024.0
 
-        val centerLat = (boundingBox.latNorth + boundingBox.latSouth) / 2.0
-        val centerLon = (boundingBox.lonEast + boundingBox.lonWest) / 2.0
+        val centerLat = (bounds.latitudeNorth + bounds.latitudeSouth) / 2.0
+        val centerLon = (bounds.longitudeEast + bounds.longitudeWest) / 2.0
 
         viewModelScope.launch {
             val geocodeResult = routingRepository.reverseGeocode(centerLat, centerLon)
@@ -846,10 +885,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         estimatedSizeMB = estMb,
                         minZoom = minZoom,
                         maxZoom = maxZoom,
-                        minLat = boundingBox.latSouth,
-                        maxLat = boundingBox.latNorth,
-                        minLon = boundingBox.lonWest,
-                        maxLon = boundingBox.lonEast
+                        minLat = bounds.latitudeSouth,
+                        maxLat = bounds.latitudeNorth,
+                        minLon = bounds.longitudeWest,
+                        maxLon = bounds.longitudeEast
                     )
                 )
             }
@@ -860,10 +899,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(pendingDownloadEstimate = null) }
     }
 
-    fun confirmOfflineMapDownload(context: Context, mapView: MapView, customRegionName: String = "") {
+    fun confirmOfflineMapDownload(context: Context, controller: MapLibreController?, customRegionName: String = "") {
         val estimate = _uiState.value.pendingDownloadEstimate ?: return
-        val cacheManager = CacheManager(mapView)
-        val boundingBox = mapView.boundingBox ?: return
         val regionName = customRegionName.ifBlank { estimate.suggestedName }
 
         _uiState.update {
@@ -872,113 +909,161 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 isDownloadingOfflineMap = true,
                 downloadProgress = 0,
                 downloadTotalTiles = estimate.totalTiles,
-                downloadStatusMessage = "Download gestartet (${estimate.totalTiles} Kacheln)...",
+                downloadStatusMessage = "Vektor-Download gestartet...",
                 downloadEstimatedTimeRemaining = "Berechne Restzeit..."
             )
         }
 
         downloadTimeHistory.clear()
 
-        cacheManager.downloadAreaAsync(
-            context.applicationContext,
-            boundingBox,
-            estimate.minZoom,
-            estimate.maxZoom,
-            object : CacheManager.CacheManagerCallback {
-                override fun onTaskComplete() {
-                    refreshOfflineCacheSize(context)
-                    viewModelScope.launch {
-                        poiRepository.saveOfflineRegion(
-                            OfflineRegionEntity(
-                                name = regionName,
-                                minLat = estimate.minLat,
-                                maxLat = estimate.maxLat,
-                                minLon = estimate.minLon,
-                                maxLon = estimate.maxLon,
-                                minZoom = estimate.minZoom,
-                                maxZoom = estimate.maxZoom,
-                                tileCount = estimate.totalTiles,
-                                sizeMB = estimate.estimatedSizeMB
-                            )
-                        )
-                    }
-                    _uiState.update {
-                        it.copy(
-                            isDownloadingOfflineMap = false,
-                            downloadStatusMessage = "Region '$regionName' erfolgreich offline gespeichert!",
-                            downloadEstimatedTimeRemaining = null
-                        )
-                    }
-                }
+        val bounds = LatLngBounds.Builder()
+            .include(LatLng(estimate.maxLat, estimate.maxLon))
+            .include(LatLng(estimate.minLat, estimate.minLon))
+            .build()
 
-                override fun onTaskFailed(errors: Int) {
-                    refreshOfflineCacheSize(context)
-                    _uiState.update {
-                        it.copy(
-                            isDownloadingOfflineMap = false,
-                            downloadStatusMessage = "Karten-Download beendet ($errors Fehler).",
-                            downloadEstimatedTimeRemaining = null
-                        )
-                    }
-                }
+        val definition = OfflineTilePyramidRegionDefinition(
+            MapLibreStyleHelper.DAY_STYLE_URL,
+            bounds,
+            estimate.minZoom.toDouble(),
+            estimate.maxZoom.toDouble(),
+            context.resources.displayMetrics.density
+        )
+        val metadata = regionName.toByteArray(Charsets.UTF_8)
 
-                override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {
-                    val now = System.currentTimeMillis()
-                    downloadTimeHistory.addLast(Pair(now, progress))
+        val offlineManager = OfflineManager.getInstance(context.applicationContext)
+        offlineManager.createOfflineRegion(
+            definition,
+            metadata,
+            object : OfflineManager.CreateOfflineRegionCallback {
+                override fun onCreate(offlineRegion: OfflineRegion) {
+                    offlineRegion.setObserver(object : OfflineRegion.OfflineRegionObserver {
+                        override fun onStatusChanged(status: OfflineRegionStatus) {
+                            val completed = status.completedResourceCount.toInt()
+                            val required = status.requiredResourceCount.toInt().coerceAtLeast(1)
+                            val now = System.currentTimeMillis()
+                            downloadTimeHistory.addLast(Pair(now, completed))
+                            while (downloadTimeHistory.isNotEmpty() && (now - downloadTimeHistory.first.first) > 10000L) {
+                                downloadTimeHistory.removeFirst()
+                            }
+                            var etaStr: String? = null
+                            if (downloadTimeHistory.size >= 2) {
+                                val oldest = downloadTimeHistory.first
+                                val timeDeltaSec = (now - oldest.first) / 1000.0
+                                val progressDelta = completed - oldest.second
+                                if (timeDeltaSec > 1.0 && progressDelta > 0) {
+                                    val rate = progressDelta / timeDeltaSec
+                                    val rem = required - completed
+                                    etaStr = if (rem > 0 && rate > 0) formatEta((rem / rate).toInt()) else "fast fertig..."
+                                }
+                            }
 
-                    while (downloadTimeHistory.isNotEmpty() && (now - downloadTimeHistory.first.first) > 10000L) {
-                        downloadTimeHistory.removeFirst()
-                    }
-
-                    var etaStr: String? = null
-                    if (downloadTimeHistory.size >= 2) {
-                        val oldest = downloadTimeHistory.first
-                        val timeDeltaSec = (now - oldest.first) / 1000.0
-                        val progressDelta = progress - oldest.second
-
-                        if (timeDeltaSec > 1.0 && progressDelta > 0) {
-                            val tilesPerSec = progressDelta / timeDeltaSec
-                            val remainingTiles = estimate.totalTiles - progress
-                            if (remainingTiles > 0 && tilesPerSec > 0) {
-                                val remainingSec = (remainingTiles / tilesPerSec).toInt()
-                                etaStr = formatEta(remainingSec)
+                            if (status.isComplete) {
+                                offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                                val actualMb = status.completedResourceSize / (1024.0 * 1024.0)
+                                refreshOfflineCacheSize(context)
+                                viewModelScope.launch {
+                                    poiRepository.saveOfflineRegion(
+                                        OfflineRegionEntity(
+                                            name = regionName,
+                                            minLat = estimate.minLat,
+                                            maxLat = estimate.maxLat,
+                                            minLon = estimate.minLon,
+                                            maxLon = estimate.maxLon,
+                                            minZoom = estimate.minZoom,
+                                            maxZoom = estimate.maxZoom,
+                                            tileCount = required,
+                                            sizeMB = actualMb
+                                        )
+                                    )
+                                }
+                                _uiState.update {
+                                    it.copy(
+                                        isDownloadingOfflineMap = false,
+                                        downloadProgress = required,
+                                        downloadTotalTiles = required,
+                                        downloadStatusMessage = "Vektor-Region '$regionName' offline gespeichert (%.1f MB)!".format(actualMb),
+                                        downloadEstimatedTimeRemaining = null
+                                    )
+                                }
                             } else {
-                                etaStr = "fast fertig..."
+                                _uiState.update {
+                                    it.copy(
+                                        downloadProgress = completed,
+                                        downloadTotalTiles = required,
+                                        downloadStatusMessage = "Lade Vektor-Daten ($completed / $required)...",
+                                        downloadEstimatedTimeRemaining = etaStr
+                                    )
+                                }
                             }
                         }
-                    }
 
+                        override fun onError(error: OfflineRegionError) {
+                            offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                            refreshOfflineCacheSize(context)
+                            _uiState.update {
+                                it.copy(
+                                    isDownloadingOfflineMap = false,
+                                    downloadStatusMessage = "Download-Fehler: ${error.message}",
+                                    downloadEstimatedTimeRemaining = null
+                                )
+                            }
+                        }
+
+                        override fun mapboxTileCountLimitExceeded(limit: Long) {
+                            offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                            _uiState.update {
+                                it.copy(
+                                    isDownloadingOfflineMap = false,
+                                    downloadStatusMessage = "Kachellimit ($limit) überschritten – bitte weiter hineinzoomen.",
+                                    downloadEstimatedTimeRemaining = null
+                                )
+                            }
+                        }
+                    })
+                    offlineRegion.setDownloadState(OfflineRegion.STATE_ACTIVE)
+                }
+
+                override fun onError(error: String) {
                     _uiState.update {
                         it.copy(
-                            downloadProgress = progress,
-                            downloadStatusMessage = "Speichere Kachel $progress von ${estimate.totalTiles}...",
-                            downloadEstimatedTimeRemaining = etaStr
+                            isDownloadingOfflineMap = false,
+                            downloadStatusMessage = "Offline-Region konnte nicht erstellt werden: $error",
+                            downloadEstimatedTimeRemaining = null
                         )
                     }
                 }
-
-                override fun downloadStarted() {}
-                override fun setPossibleTilesInArea(total: Int) {}
             }
         )
     }
 
-    fun deleteOfflineRegion(context: Context, mapView: MapView?, region: OfflineRegionEntity) {
+    fun deleteOfflineRegion(context: Context, controller: MapLibreController?, region: OfflineRegionEntity) {
         viewModelScope.launch {
             poiRepository.deleteOfflineRegion(region)
-            if (mapView != null) {
-                try {
-                    val cacheManager = CacheManager(mapView)
-                    val bbox = BoundingBox(region.maxLat, region.maxLon, region.minLat, region.minLon)
-                    cacheManager.cleanAreaAsync(context.applicationContext, bbox, region.minZoom, region.maxZoom)
-                } catch (_: Exception) {}
-            }
+            try {
+                OfflineManager.getInstance(context.applicationContext)
+                    .listOfflineRegions(object : OfflineManager.ListOfflineRegionsCallback {
+                        override fun onList(offlineRegions: Array<OfflineRegion>?) {
+                            offlineRegions?.forEach { mlRegion ->
+                                val name = runCatching { mlRegion.metadata.toString(Charsets.UTF_8) }.getOrNull()
+                                if (name == region.name) {
+                                    mlRegion.delete(object : OfflineRegion.OfflineRegionDeleteCallback {
+                                        override fun onDelete() {
+                                            refreshOfflineCacheSize(context)
+                                        }
+                                        override fun onError(error: String) {}
+                                    })
+                                }
+                            }
+                        }
+                        override fun onError(error: String) {}
+                    })
+            } catch (_: Exception) {}
             refreshOfflineCacheSize(context)
             _uiState.update { it.copy(downloadStatusMessage = "Region '${region.name}' gelöscht.") }
         }
     }
 
-    fun updateOfflineRegion(context: Context, mapView: MapView, region: OfflineRegionEntity) {
+    fun updateOfflineRegion(context: Context, controller: MapLibreController, region: OfflineRegionEntity) {
         _uiState.update {
             it.copy(
                 pendingDownloadEstimate = DownloadEstimate(
@@ -994,7 +1079,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
-        confirmOfflineMapDownload(context, mapView, region.name)
+        confirmOfflineMapDownload(context, controller, region.name)
     }
 
     private fun formatEta(totalSec: Int): String {
@@ -1008,23 +1093,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startOfflineMapDownload(context: Context, mapView: MapView) {
-        prepareOfflineMapDownload(mapView)
-    }
-
-    fun cacheTilesAroundLocation(context: Context, mapView: MapView, lat: Double, lon: Double) {
-        try {
-            val cacheManager = CacheManager(mapView)
-            val delta = 0.015 // ~1.5km radius
-            val bbox = BoundingBox(lat + delta, lon + delta, lat - delta, lon - delta)
-            cacheManager.downloadAreaAsync(context.applicationContext, bbox, 14, 17, object : CacheManager.CacheManagerCallback {
-                override fun onTaskComplete() {}
-                override fun onTaskFailed(errors: Int) {}
-                override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {}
-                override fun downloadStarted() {}
-                override fun setPossibleTilesInArea(total: Int) {}
-            })
-        } catch (_: Exception) {}
+    fun startOfflineMapDownload(context: Context, controller: MapLibreController) {
+        prepareOfflineMapDownload(controller)
     }
 
     fun dismissOfflineDownloadStatus() {
@@ -1034,8 +1104,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshOfflineCacheSize(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val tileCacheDir = Configuration.getInstance().osmdroidTileCache
-                val sizeBytes = getFolderSize(tileCacheDir)
+                val mbglDb = File(context.filesDir, "mbgl-offline.db")
+                val sizeBytes = if (mbglDb.exists()) mbglDb.length() else 0L
                 val sizeFormatted = if (sizeBytes < 1024 * 1024) {
                     "%.1f KB".format(sizeBytes / 1024.0)
                 } else {
@@ -1046,25 +1116,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun getFolderSize(file: File?): Long {
-        if (file == null || !file.exists()) return 0L
-        if (file.isFile) return file.length()
-        var size = 0L
-        file.listFiles()?.forEach { child ->
-            size += getFolderSize(child)
-        }
-        return size
-    }
-
-    fun clearOfflineTileCache(context: Context, mapView: MapView?) {
+    fun clearOfflineTileCache(context: Context, controller: MapLibreController?) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                mapView?.tileProvider?.clearTileCache()
-                val tileCacheDir = Configuration.getInstance().osmdroidTileCache
-                if (tileCacheDir.exists()) {
-                    tileCacheDir.deleteRecursively()
-                    tileCacheDir.mkdirs()
-                }
+                OfflineManager.getInstance(context.applicationContext)
+                    .clearAmbientCache(object : OfflineManager.FileSourceCallback {
+                        override fun onSuccess() {
+                            refreshOfflineCacheSize(context)
+                        }
+                        override fun onError(message: String) {}
+                    })
             } catch (_: Exception) {}
             refreshOfflineCacheSize(context)
             _uiState.update { it.copy(downloadStatusMessage = "Karten-Cache gelöscht.") }

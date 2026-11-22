@@ -4,7 +4,7 @@
 ![Android](https://img.shields.io/badge/Android-SDK%2037-3DDC84?logo=android&logoColor=white)
 ![Android Auto](https://img.shields.io/badge/Android%20Auto-Car%20App%20Library-3DDC84?logo=androidauto&logoColor=white)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
-![OSM](https://img.shields.io/badge/OpenStreetMap-osmdroid-7E9680?logo=openstreetmap&logoColor=white)
+![OSM](https://img.shields.io/badge/OpenStreetMap-MapLibre%20Native-396CB2)
 ![Room](https://img.shields.io/badge/Database-Room%202.8.5-4285F4?logo=sqlite&logoColor=white)
 ![License](https://img.shields.io/badge/License-ODbL--1.0-blue)
 
@@ -25,11 +25,10 @@
 
 ## ✨ Features
 
-- 🗺️ **Interaktive OpenStreetMap-Karte:**
-  - Kostenloses, schlüssel- und lizenzfreies Kartenmaterial über `osmdroid` (`tile.openstreetmap.de`).
-  - Native Canvas-Standortanimation mit pulsierendem Punkt und **Blickrichtungskegel** (`Sensor.TYPE_ROTATION_VECTOR`).
-  - Zwei-Finger-Kartendrehung mit **Kompass-FAB** zum Ein-Klick-Einnorden gen Norden.
-  - **Dunkler Nachtmodus:** Automatisches/manuelles Graphit-Kardendesign bei Nacht.
+- 🗺️ **Interaktive GPU-Vektor-Karte (MapLibre Native + OpenFreeMap):**
+  - Kostenlose, schlüssel- und trackingfreie OpenStreetMap-Vektordaten (`tiles.openfreemap.org`, OpenFreeMap Liberty & Dark) gerendert mit 60–120 FPS direkt auf der GPU (`org.maplibre.gl:android-sdk`).
+  - **Gestochen scharfe Schriften & 4 echte Vektor-Nachtschemata:** *Graphit*, *Mitternachtsblau*, *Warm-Bernstein* und *Hochkontrast* mit sofortigem GPU-Restyling ohne Kachel-Flackern und aufrecht bleibenden Straßennamen bei Kartendrehung.
+  - Native Standortanzeige mit **Blickrichtungskegel** (`Sensor.TYPE_ROTATION_VECTOR`) und Zwei-Finger-Kartendrehung mit **Kompass-FAB** zum Ein-Klick-Einnorden.
 
 - 🥾 **Spezialisiertes Outdoor- & Fußgänger-Routing:**
   - **BRouter Outdoor-Hiking Engine (`brouter.de`):** Führt Routen zielsicher über schmale Pfade, Trampelpfade, Feldwege, Waldwege, Treppen und Schotterwege.
@@ -66,7 +65,7 @@
   - Dreifach-Toggle für Erscheinungsbild (*System*, *Immer hell*, *Immer dunkel*).
 
 - 🚗 **Android Auto Integration:**
-  - **Eigene OpenStreetMap-Kartenoberfläche (`CarMapSurfaceRenderer`):** 30-FPS-Positionsinterpolation, automatischer Tag-/Nachtwechsel, 4 kontrastreiche Nacht-Farbschemata mit semantischem Pixel-Remapping und positiver Polarität (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast* – helle Straßen auf dunklem Grund, 100 % offline-kompatibel), geschwindigkeits- und manöverabhängiger dynamischer Auto-Zoom sowie persistente Umschaltung zwischen *Norden oben* und *Fahrtrichtung oben* (Heading-Up).
+  - **GPU-Vektor-Kartenoberfläche (`CarMapSurfaceRenderer` mit MapLibre Native):** Rendert OpenFreeMap-Vektorkarten per `VirtualDisplay` + `Presentation` (`TextureView`-Modus) direkt auf das Fahrzeugdisplay – gestochen scharfe Schriften, automatischer Tag-/Nachtwechsel, 4 echte Vektor-Nachtschemata (*Graphit*, *Mitternachtsblau*, *Warm-Bernstein*, *Hochkontrast*), aufrecht bleibende Straßennamen im Heading-Up-Modus, dynamischer Auto-Zoom sowie persistente Ausrichtung (*Norden oben* / *Fahrtrichtung oben*).
   - **Schnelleinstellungen (`Optionen`):** Direkter In-Car-Zugriff auf Erscheinungsbild (*System* / *Hell* / *Dunkel*), Nacht-Farbschema, Kartenausrichtung, Auto-Zoom und Sprachausgabe.
   - **Suche, Favoriten & „Ziele“-Schnellmenü:** Direkte Zielsuche über die Auto-Tastatur, Ein-Klick-Routenstart aus Favoriten sowie das neue **`Ziele`-Menü (`CarDestinationsScreen`)** mit lokalen Ziel-Vorschlägen für die aktuelle Tageszeit, den letzten Fahrten und einem **Rückweg-Umschalter**.
   - **Routenvorschau & Alternativrouten (`CarRoutePreviewScreen`):** Bei mehreren verfügbaren Strecken öffnet sich die native Android-Auto-Routenvorschau (`RoutePreviewNavigationTemplate`) zum Vergleichen und Auswählen von bis zu 3 Alternativrouten direkt auf der Karte vor Fahrtantritt.

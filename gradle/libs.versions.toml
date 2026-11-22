@@ -11,7 +11,7 @@ ksp = "2.1.10-1.0.30"
 composeBom = "2025.12.00"
 room = "2.8.5"
 playServicesLocation = "21.4.0"
-osmdroid = "6.1.20"
+maplibre = "13.7.1"
 retrofit = "2.11.0"
 kotlinxSerialization = "1.7.3"
 navigationCompose = "2.8.8"
@@ -47,7 +47,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 
 # Location & Mapping
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
-osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
+maplibre-android = { group = "org.maplibre.gl", name = "android-sdk", version.ref = "maplibre" }
 
 # Networking & Serialization
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
