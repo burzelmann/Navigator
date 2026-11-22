@@ -429,9 +429,7 @@ fun MapScreen(
                     currentStepIndex = uiState.currentRouteStepIndex,
                     onSelectAlternativeRoute = { viewModel.selectAlternativeRoute(it) },
                     onModeChange = { mode ->
-                        uiState.selectedPoi?.let { poi ->
-                            viewModel.startRouteToPoi(poi, mode)
-                        }
+                        viewModel.setTravelMode(mode)
                     },
                     onStartNavigation = { viewModel.startNavigation() },
                     onStopNavigation = { viewModel.stopNavigation() },

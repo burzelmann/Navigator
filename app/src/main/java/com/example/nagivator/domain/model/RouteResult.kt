@@ -18,7 +18,8 @@ data class RouteResult(
     val steps: List<RouteStep> = emptyList(),
     val totalAscentMeters: Double = 0.0,
     val totalDescentMeters: Double = 0.0,
-    val elevationPoints: List<Pair<Double, Double>> = emptyList() // Pair<DistanceMeters, AltitudeMeters>
+    val elevationPoints: List<Pair<Double, Double>> = emptyList(), // Pair<DistanceMeters, AltitudeMeters>
+    val isOfflineFallback: Boolean = false
 ) {
     val formattedDistance: String
         get() = if (totalDistanceMeters >= 1000) {

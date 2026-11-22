@@ -346,6 +346,22 @@ fun RouteCard(
                 }
             }
 
+            if (route.isOfflineFallback) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Kein Internet – Luftlinie wird angezeigt",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
             if (!isNavigating && alternativeRoutes.size > 1) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(

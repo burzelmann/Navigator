@@ -12,8 +12,10 @@ import androidx.lifecycle.lifecycleScope
 import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.data.local.NagivatorDatabase
+import com.example.nagivator.data.repository.PoiRepository
 import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.data.repository.TripHistoryRepository
+import kotlinx.coroutines.flow.first
 import com.example.nagivator.domain.NavigationStateHolder
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.TravelMode
@@ -30,6 +32,7 @@ class CarSearchScreen(
 ) : Screen(carContext) {
 
     private val db = NagivatorDatabase.getDatabase(carContext)
+    private val poiRepository = PoiRepository(db.poiDao(), db.savedRouteDao())
     private val tripHistoryRepository = TripHistoryRepository(db.tripHistoryDao())
     private val routingRepository = RoutingRepository()
 
@@ -92,13 +95,38 @@ class CarSearchScreen(
         hasSearched = true
         result.onSuccess { places ->
             searchResults = places.take(6)
-        }.onFailure { error ->
-            searchResults = emptyList()
-            CarToast.makeText(
-                carContext,
-                error.localizedMessage ?: "Suche fehlgeschlagen",
-                CarToast.LENGTH_SHORT
-            ).show()
+        }.onFailure {
+            // Offline fallback: search local favorites and trip history
+            val localPois = runCatching { poiRepository.favoritePois.first() }.getOrDefault(emptyList())
+                .filter { it.displayTitle.contains(query, ignoreCase = true) }
+                .map {
+                    LocationPoint(
+                        latitude = it.latitude,
+                        longitude = it.longitude,
+                        name = it.displayTitle,
+                        address = "Offline-Favorit"
+                    )
+                }
+            val localTrips = runCatching { tripHistoryRepository.recentTripsOnce(50) }.getOrDefault(emptyList())
+                .filter { it.destinationName.contains(query, ignoreCase = true) }
+                .distinctBy { it.destinationName.lowercase() }
+                .map {
+                    LocationPoint(
+                        latitude = it.destinationLatitude,
+                        longitude = it.destinationLongitude,
+                        name = it.destinationName,
+                        address = "Offline-Verlauf"
+                    )
+                }
+            val combined = (localPois + localTrips).take(6)
+            searchResults = combined
+            if (combined.isEmpty()) {
+                CarToast.makeText(
+                    carContext,
+                    "Kein Internet – keine lokalen Treffer",
+                    CarToast.LENGTH_SHORT
+                ).show()
+            }
         }
         invalidate()
     }

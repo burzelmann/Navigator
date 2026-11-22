@@ -19,6 +19,11 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
 
 import com.example.nagivator.domain.model.SpeedPreference
 
@@ -29,7 +34,13 @@ class RoutingRepository {
     }
 
     private val mediaType = MediaType.get("application/json")
-    private val okHttpClient = OkHttpClient.Builder().build()
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .writeTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(10, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
+        .build()
 
     private val brouterApi: BRouterApi by lazy {
         Retrofit.Builder()
@@ -373,6 +384,10 @@ class RoutingRepository {
                 )
             } catch (e: Exception) {
                 Log.e("NagivatorRouting", "BRouter profile '$profileName' failed: ${e.message}")
+                // Short-circuit on network/DNS outage so we don't stall twice in a dead zone
+                if (e is UnknownHostException || e is ConnectException || e is SocketTimeoutException || e is IOException) {
+                    return null
+                }
             }
         }
         return null
@@ -408,14 +423,15 @@ class RoutingRepository {
             mode = mode,
             steps = listOf(
                 RouteStep(
-                    instruction = "Direktverbindung zum Ziel",
+                    instruction = "Offline: Luftlinie zum Ziel (kein Netz)",
                     distanceMeters = totalDist,
                     durationSeconds = totalDur,
                     maneuverType = "straight",
                     maneuverModifier = "straight",
-                    maneuverLocation = waypoints.firstOrNull()
+                    maneuverLocation = waypoints.lastOrNull()
                 )
-            )
+            ),
+            isOfflineFallback = true
         )
     }
 

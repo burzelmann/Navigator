@@ -295,6 +295,14 @@ class CarNavigationScreen(
 
                 val result = routingRepository.getRoute(updatedWaypoints, TravelMode.CAR)
                 result.onSuccess { newRoute ->
+                    if (newRoute.isOfflineFallback && !currentRoute.isOfflineFallback) {
+                        CarToast.makeText(
+                            carContext,
+                            "Kein Netz – bestehende Route bleibt aktiv",
+                            CarToast.LENGTH_SHORT
+                        ).show()
+                        return@onSuccess
+                    }
                     NavigationStateHolder.updateRoute(newRoute)
                     NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
                     surfaceRenderer.updateRoute(newRoute)

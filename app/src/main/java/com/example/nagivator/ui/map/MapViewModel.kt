@@ -426,10 +426,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setTravelMode(mode: TravelMode) {
         _uiState.update { it.copy(travelMode = mode) }
-        if (_uiState.value.isRoutePlanningMode && _uiState.value.plannedWaypoints.size >= 2) {
+        val state = _uiState.value
+        if (state.isRoutePlanningMode && state.plannedWaypoints.size >= 2) {
             calculatePlannedRoute()
-        } else {
-            _uiState.value.selectedPoi?.let { calculateRouteTo(it) }
+        } else if (state.selectedPoi != null) {
+            calculateRouteTo(state.selectedPoi, mode)
+        } else if (state.activeRoute != null && state.activeRoute.waypoints.size >= 2) {
+            val start = state.currentLocation ?: state.activeRoute.waypoints.first()
+            val dest = state.activeRoute.waypoints.last()
+            calculateRoute(start, dest, mode)
         }
     }
 
@@ -491,11 +496,48 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true) }
             delay(350)
-            val result = routingRepository.searchPlaces(query)
+            val loc = _uiState.value.currentLocation ?: NavigationStateHolder.currentLocation.value
+            val result = routingRepository.searchPlaces(
+                query = query,
+                biasLat = loc?.latitude,
+                biasLon = loc?.longitude
+            )
             result.onSuccess { places ->
                 _uiState.update { it.copy(searchResults = places, isSearching = false) }
             }.onFailure {
-                _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
+                // Offline fallback: match local POIs/favorites and recent trip destinations
+                val localPoiMatches = pois.value
+                    .filter {
+                        it.displayTitle.contains(query, ignoreCase = true) ||
+                            it.description.contains(query, ignoreCase = true)
+                    }
+                    .map {
+                        LocationPoint(
+                            latitude = it.latitude,
+                            longitude = it.longitude,
+                            name = it.displayTitle,
+                            address = "Offline-Favorit • ${it.description}".trimEnd(' ', '•')
+                        )
+                    }
+                val localTripMatches = tripHistoryRepository.recentTripsOnce(50)
+                    .filter { it.destinationName.contains(query, ignoreCase = true) }
+                    .distinctBy { it.destinationName.lowercase() }
+                    .map {
+                        LocationPoint(
+                            latitude = it.destinationLatitude,
+                            longitude = it.destinationLongitude,
+                            name = it.destinationName,
+                            address = "Offline-Verlauf"
+                        )
+                    }
+                val combined = (localPoiMatches + localTripMatches).take(8)
+                _uiState.update {
+                    it.copy(
+                        searchResults = combined,
+                        isSearching = false,
+                        routeError = if (combined.isEmpty()) "Kein Internet – keine lokalen Treffer für \"$query\"" else null
+                    )
+                }
             }
         }
     }
@@ -730,17 +772,24 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     val carPref = userSettingsRepository.settings.value.carSpeed
                     val result = routingRepository.getRoute(updatedWaypoints, state.travelMode, footPref, carPref)
                     result.onSuccess { newRoute ->
-                        NavigationStateHolder.startNavigation(newRoute)
-                        recordRouteToHistory(newRoute)
+                        val finalRoute = if (newRoute.isOfflineFallback && !activeRoute.isOfflineFallback) {
+                            activeRoute
+                        } else {
+                            newRoute
+                        }
+                        NavigationStateHolder.startNavigation(finalRoute)
+                        recordRouteToHistory(finalRoute)
                         _uiState.update {
                             it.copy(
-                                activeRoute = newRoute,
+                                activeRoute = finalRoute,
                                 isNavigating = true,
                                 isRoutePlanningMode = false,
                                 currentRouteStepIndex = 0
                             )
                         }
                     }.onFailure {
+                        NavigationStateHolder.startNavigation(activeRoute)
+                        recordRouteToHistory(activeRoute)
                         _uiState.update {
                             it.copy(
                                 isNavigating = true,
