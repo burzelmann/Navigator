@@ -24,6 +24,9 @@ object NavigationStateHolder {
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
     private val _currentSpeedLimitKmh = MutableStateFlow<Int?>(null)
     val currentSpeedLimitKmh: StateFlow<Int?> = _currentSpeedLimitKmh.asStateFlow()
 
@@ -65,6 +68,10 @@ object NavigationStateHolder {
 
     fun setMuted(muted: Boolean) {
         _isMuted.value = muted
+    }
+
+    fun setSpeaking(speaking: Boolean) {
+        _isSpeaking.value = speaking
     }
 
     fun updateRoadContext(speedLimitKmh: Int?, signals: List<RoadSignal>) {

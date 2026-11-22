@@ -35,6 +35,7 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
     private var roadFetchJob: Job? = null
     private var routeJob: Job? = null
     private var themeJob: Job? = null
+    private var speakingJob: Job? = null
 
     init {
         lifecycle.addObserver(this)
@@ -86,6 +87,13 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
                 surfaceRenderer.requestRender()
             }
         }
+
+        // Show live speaking indicator on HUD whenever TTS is active
+        speakingJob = lifecycleScope.launch {
+            NavigationStateHolder.isSpeaking.collectLatest { speaking ->
+                surfaceRenderer.updateSpeaking(speaking)
+            }
+        }
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
@@ -94,6 +102,7 @@ class CarHomeScreen(carContext: CarContext) : Screen(carContext), DefaultLifecyc
         roadFetchJob?.cancel()
         routeJob?.cancel()
         themeJob?.cancel()
+        speakingJob?.cancel()
         surfaceRenderer.destroy()
     }
 

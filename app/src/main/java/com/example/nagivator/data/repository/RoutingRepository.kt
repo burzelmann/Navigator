@@ -227,10 +227,16 @@ class RoutingRepository {
 
         val steps = osrmRoute.legs.flatMap { leg ->
             leg.steps.map { step ->
+                // OSRM puts German Autobahn numbers ("A 57", "A 3") in `ref` while leaving `name` empty.
+                val effectiveRoadName = when {
+                    step.name.isBlank() -> step.ref
+                    step.ref.isNotBlank() && !step.name.contains(step.ref, ignoreCase = true) -> "${step.name} (${step.ref})"
+                    else -> step.name
+                }
                 val maneuverName = GermanManeuverTranslator.translate(
                     type = step.maneuver?.type ?: "",
                     modifier = step.maneuver?.modifier ?: "",
-                    rawName = step.name
+                    rawName = effectiveRoadName
                 )
                 val maneuverLocCoords = step.maneuver?.location
                 val maneuverPoint = if (maneuverLocCoords != null && maneuverLocCoords.size >= 2) {

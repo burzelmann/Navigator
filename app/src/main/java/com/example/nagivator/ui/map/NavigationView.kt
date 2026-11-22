@@ -195,15 +195,23 @@ fun NavigationView(
                 )
             }
 
+            val isSpeaking by NavigationStateHolder.isSpeaking.collectAsState()
             FloatingActionButton(
                 onClick = onToggleMute,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                containerColor = when {
+                    isSpeaking -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.surface
+                },
+                contentColor = when {
+                    isSpeaking -> MaterialTheme.colorScheme.onPrimary
+                    isMuted -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.primary
+                },
                 elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
             ) {
                 Icon(
                     imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = "Ton Umschalten"
+                    contentDescription = if (isSpeaking) "Sprachausgabe aktiv" else "Ton Umschalten"
                 )
             }
 

@@ -23,9 +23,11 @@ data class AutobahnEventDto(
     val subtitle: String = "",
     val description: List<String> = emptyList(),
     val isBlocked: JsonPrimitive? = null,
+    val future: JsonPrimitive? = null,
     val coordinate: AutobahnCoordinate? = null
 ) {
     fun isBlockedBool(): Boolean = isBlocked?.content?.equals("true", ignoreCase = true) == true
+    fun isFutureBool(): Boolean = future?.content?.equals("true", ignoreCase = true) == true
 }
 
 @Serializable

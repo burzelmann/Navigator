@@ -78,6 +78,7 @@ class TrafficRepository {
         type: TrafficIncidentType,
         defaultBlocked: Boolean
     ): TrafficIncident? {
+        if (isFutureBool()) return null
         val lat = coordinate?.latDouble() ?: return null
         val lon = coordinate?.lonDouble() ?: return null
         val id = identifier.ifBlank { "${roadId}_${type.name}_${lat}_$lon" }

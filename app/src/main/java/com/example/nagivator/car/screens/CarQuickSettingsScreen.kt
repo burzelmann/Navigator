@@ -1,9 +1,11 @@
 package com.example.nagivator.car.screens
 
 import androidx.car.app.CarContext
+import androidx.car.app.CarToast
 import androidx.car.app.Screen
 import androidx.car.app.constraints.ConstraintManager
 import androidx.car.app.model.Action
+import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Row
@@ -12,6 +14,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.nagivator.car.CarNavigationHelper
+import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.UserSettingsRepository
@@ -30,6 +33,7 @@ class CarQuickSettingsScreen(
 ) : Screen(carContext), DefaultLifecycleObserver {
 
     private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
+    private val voiceGuidance = CarVoiceGuidance.getInstance(carContext)
     private var settingsJob: Job? = null
 
     init {
@@ -146,9 +150,26 @@ class CarQuickSettingsScreen(
         val listBuilder = ItemList.Builder()
         rows.take(limit).forEach { listBuilder.addItem(it) }
 
+        val actionStrip = ActionStrip.Builder()
+            .addAction(
+                Action.Builder()
+                    .setTitle("Testton")
+                    .setOnClickListener {
+                        voiceGuidance.speakTestPrompt()
+                        CarToast.makeText(
+                            carContext,
+                            "Testansage läuft – jetzt Lautstärke regeln",
+                            CarToast.LENGTH_LONG
+                        ).show()
+                    }
+                    .build()
+            )
+            .build()
+
         return ListTemplate.Builder()
             .setTitle("Schnelleinstellungen")
             .setHeaderAction(Action.BACK)
+            .setActionStrip(actionStrip)
             .setSingleList(listBuilder.build())
             .build()
     }

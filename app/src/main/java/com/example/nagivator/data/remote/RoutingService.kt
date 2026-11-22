@@ -17,6 +17,8 @@ data class OsrmStep(
     val distance: Double = 0.0,
     val duration: Double = 0.0,
     val name: String = "",
+    val ref: String = "",
+    val destinations: String = "",
     val maneuver: OsrmManeuver? = null
 )
 

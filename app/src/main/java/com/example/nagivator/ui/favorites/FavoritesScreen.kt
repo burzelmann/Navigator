@@ -574,6 +574,25 @@ fun FavoritesScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.deleteRoute(route)
+                            editingRoute = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                        Text(
+                            text = "Route löschen",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -645,6 +664,25 @@ fun FavoritesScreen(
                         selectedIconKey = editPoiIcon,
                         onIconSelected = { editPoiIcon = it }
                     )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.deletePoi(poi)
+                            editingPoi = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                        Text(
+                            text = "Favorit löschen",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             },
             confirmButton = {

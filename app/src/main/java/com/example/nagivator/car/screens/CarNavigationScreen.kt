@@ -47,7 +47,7 @@ class CarNavigationScreen(
 ) : Screen(carContext), DefaultLifecycleObserver {
 
     private val navManager = carContext.getCarService(NavigationManager::class.java)
-    private val voiceGuidance = CarVoiceGuidance(carContext)
+    private val voiceGuidance = CarVoiceGuidance.getInstance(carContext)
     private val routingRepository = RoutingRepository()
     private val trafficRepository = TrafficRepository()
 
@@ -121,7 +121,6 @@ class CarNavigationScreen(
         locationJob?.cancel()
         trafficJob?.cancel()
         navManager.navigationEnded()
-        voiceGuidance.shutdown()
     }
 
     private suspend fun checkAutobahnTraffic() {
@@ -138,10 +137,16 @@ class CarNavigationScreen(
             return
         }
 
-        val firstWarning = incidents.firstOrNull { announcedIncidentIds.add(it.id) }
-        if (firstWarning != null) {
-            val kind = if (firstWarning.type == TrafficIncidentType.ROADWORK) "Baustelle" else "Verkehrsmeldung"
-            val msg = "Achtung auf ${firstWarning.roadId}: $kind voraus"
+        val newWarnings = incidents.filter { announcedIncidentIds.add(it.id) }
+        if (newWarnings.isNotEmpty()) {
+            val first = newWarnings.first()
+            val roadworksCount = newWarnings.count { it.type == TrafficIncidentType.ROADWORK }
+            val msg = when {
+                roadworksCount > 1 -> "Achtung auf ${first.roadId}: $roadworksCount Baustellen voraus"
+                newWarnings.size > 1 -> "Achtung auf ${first.roadId}: ${newWarnings.size} Verkehrsmeldungen voraus"
+                first.type == TrafficIncidentType.ROADWORK -> "Achtung auf ${first.roadId}: Baustelle voraus"
+                else -> "Achtung auf ${first.roadId}: Verkehrsmeldung voraus"
+            }
             voiceGuidance.speak(msg)
             CarToast.makeText(carContext, msg, CarToast.LENGTH_LONG).show()
         }

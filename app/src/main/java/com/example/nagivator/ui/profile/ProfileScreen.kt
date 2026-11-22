@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Person
@@ -24,6 +25,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -31,12 +33,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.MapColorScheme
@@ -48,6 +54,8 @@ fun ProfileScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsState()
+    val context = LocalContext.current
+    val testVoiceGuidance = remember { CarVoiceGuidance.getInstance(context) }
 
     Column(
         modifier = modifier
@@ -234,6 +242,20 @@ fun ProfileScreen(
                         checked = !settings.voiceMuted,
                         onCheckedChange = { enabled -> viewModel.setVoiceMuted(!enabled) }
                     )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = { testVoiceGuidance.speakTestPrompt() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("Testansage abspielen (Lautstärke testen)")
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

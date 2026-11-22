@@ -311,6 +311,12 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
         requestRender()
     }
 
+    fun updateSpeaking(isSpeaking: Boolean) {
+        mainHandler.post {
+            hudOverlay?.updateSpeaking(isSpeaking)
+        }
+    }
+
     fun requestRender() {
         mainHandler.post {
             perspective = userSettingsRepository.settings.value.carMapPerspective
@@ -323,6 +329,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
                 currentLocation?.speedMps ?: 0f,
                 NavigationStateHolder.currentSpeedLimitKmh.value
             )
+            hudOverlay?.updateSpeaking(NavigationStateHolder.isSpeaking.value)
         }
     }
 
@@ -672,6 +679,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
 private class CarHudOverlayView(context: Context) : View(context) {
     private var speedMps: Float = 0f
     private var speedLimitKmh: Int? = null
+    private var isSpeaking: Boolean = false
     private var visibleArea: Rect? = null
     private var stableArea: Rect? = null
 
@@ -686,6 +694,13 @@ private class CarHudOverlayView(context: Context) : View(context) {
         this.speedMps = speedMps
         this.speedLimitKmh = speedLimitKmh
         invalidate()
+    }
+
+    fun updateSpeaking(speaking: Boolean) {
+        if (this.isSpeaking != speaking) {
+            this.isSpeaking = speaking
+            invalidate()
+        }
     }
 
     fun updateSafeAreas(visible: Rect?, stable: Rect?) {
@@ -739,6 +754,56 @@ private class CarHudOverlayView(context: Context) : View(context) {
             val label = if (limit == RoadContextRepository.SPEED_LIMIT_UNLIMITED) "∞" else limit.toString()
             val y = cy - (textPaint.descent() + textPaint.ascent()) / 2f
             canvas.drawText(label, cx, y, textPaint)
+        }
+
+        // Visual Audio-Output Indicator ("Ansage" pill) whenever TTS is speaking.
+        // Positioned near top-right of safe area (below ActionStrip, never obscured by bottom CarToasts).
+        if (isSpeaking) {
+            val pillW = 136f
+            val pillH = 40f
+            val topEdge = (safe.top + 12f).coerceAtLeast(16f)
+            val pillRect = RectF(
+                rightEdge - pillW,
+                topEdge,
+                rightEdge,
+                topEdge + pillH
+            )
+            bgPaint.color = Color.parseColor("#EE00838F")
+            canvas.drawRoundRect(pillRect, 19f, 19f, bgPaint)
+
+            strokePaint.color = Color.parseColor("#80DEEA")
+            strokePaint.strokeWidth = 2.5f
+            canvas.drawRoundRect(pillRect, 19f, 19f, strokePaint)
+
+            // Speaker icon on left side of pill
+            val sx = pillRect.left + 16f
+            val sy = pillRect.centerY()
+            bgPaint.color = Color.WHITE
+            val speakerPath = Path().apply {
+                moveTo(sx, sy - 4f)
+                lineTo(sx + 5f, sy - 4f)
+                lineTo(sx + 11f, sy - 9f)
+                lineTo(sx + 11f, sy + 9f)
+                lineTo(sx + 5f, sy + 4f)
+                lineTo(sx, sy + 4f)
+                close()
+            }
+            canvas.drawPath(speakerPath, bgPaint)
+
+            // Sound wave arcs
+            strokePaint.color = Color.WHITE
+            strokePaint.strokeWidth = 2.2f
+            strokePaint.strokeCap = Paint.Cap.ROUND
+            canvas.drawArc(sx + 10f, sy - 6f, sx + 18f, sy + 6f, -45f, 90f, false, strokePaint)
+            canvas.drawArc(sx + 13f, sy - 10f, sx + 24f, sy + 10f, -45f, 90f, false, strokePaint)
+
+            // Label "Ansage"
+            textPaint.color = Color.WHITE
+            textPaint.textSize = 17f
+            textPaint.textAlign = Paint.Align.LEFT
+            val labelY = sy - (textPaint.descent() + textPaint.ascent()) / 2f
+            canvas.drawText("Ansage", sx + 30f, labelY, textPaint)
+            textPaint.textAlign = Paint.Align.CENTER
         }
     }
 }
