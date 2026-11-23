@@ -1,12 +1,24 @@
 package com.example.nagivator.domain.model
 
+data class LaneInfo(
+    val indications: List<String>,
+    val isValid: Boolean
+)
+
 data class RouteStep(
     val instruction: String,
     val distanceMeters: Double,
     val durationSeconds: Double,
     val maneuverType: String = "",
     val maneuverModifier: String = "",
-    val maneuverLocation: LocationPoint? = null
+    val maneuverLocation: LocationPoint? = null,
+    val roadName: String = "",
+    val roadRef: String = "",
+    val destinations: String = "",
+    val exitRef: String = "",
+    val rotaryName: String = "",
+    val roundaboutExit: Int? = null,
+    val lanes: List<LaneInfo> = emptyList()
 )
 
 data class RouteResult(

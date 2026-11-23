@@ -31,6 +31,11 @@ import androidx.compose.material.icons.filled.RoundaboutRight
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TurnLeft
 import androidx.compose.material.icons.filled.TurnRight
+import androidx.compose.material.icons.filled.TurnSharpLeft
+import androidx.compose.material.icons.filled.TurnSharpRight
+import androidx.compose.material.icons.filled.TurnSlightLeft
+import androidx.compose.material.icons.filled.TurnSlightRight
+import androidx.compose.material.icons.filled.UTurnLeft
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
@@ -84,6 +89,19 @@ fun NavigationView(
     val isLastStep = safeIndex == route.steps.size - 1 && safeIndex > 0
     val currentStep = route.steps[safeIndex]
     val nextStep = if (safeIndex < route.steps.size - 1) route.steps[safeIndex + 1] else null
+    val liveLoc by NavigationStateHolder.currentLocation.collectAsState()
+    val liveStepDistMeters = run {
+        val loc = liveLoc
+        val mLoc = currentStep.maneuverLocation
+        if (loc != null && mLoc != null) {
+            CarNavigationHelper.haversineMeters(
+                loc.latitude, loc.longitude,
+                mLoc.latitude, mLoc.longitude
+            )
+        } else {
+            currentStep.distanceMeters
+        }
+    }
 
     // Compute ETA time
     val etaMillis = System.currentTimeMillis() + (route.totalDurationSeconds * 1000).toLong()
@@ -127,10 +145,10 @@ fun NavigationView(
                         }
 
                         Column(modifier = Modifier.weight(1f)) {
-                            val distText = if (currentStep.distanceMeters >= 1000) {
-                                "IN %.1f KM".format(currentStep.distanceMeters / 1000.0)
+                            val distText = if (liveStepDistMeters >= 1000) {
+                                "IN %.1f KM".format(liveStepDistMeters / 1000.0)
                             } else {
-                                "IN ${currentStep.distanceMeters.toInt()} METERN"
+                                "IN ${liveStepDistMeters.toInt()} METERN"
                             }
                             Text(
                                 text = if (isLastStep) "AM ZIEL" else distText,
@@ -143,6 +161,58 @@ fun NavigationView(
                                 style = MaterialTheme.typography.titleLarge,
                                 color = if (isLastStep) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
                             )
+                        }
+                    }
+
+                    if (!isLastStep && currentStep.lanes.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                currentStep.lanes.take(6).forEach { lane ->
+                                    val primaryIndication = lane.indications.firstOrNull().orEmpty()
+                                    val laneIcon = when (primaryIndication.lowercase().trim()) {
+                                        "left" -> Icons.Default.TurnLeft
+                                        "slight left", "slight_left" -> Icons.Default.TurnSlightLeft
+                                        "sharp left", "sharp_left" -> Icons.Default.TurnSharpLeft
+                                        "right" -> Icons.Default.TurnRight
+                                        "slight right", "slight_right" -> Icons.Default.TurnSlightRight
+                                        "sharp right", "sharp_right" -> Icons.Default.TurnSharpRight
+                                        "uturn" -> Icons.Default.UTurnLeft
+                                        else -> Icons.Default.ArrowUpward
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (lane.isValid) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            Color.Transparent
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = laneIcon,
+                                            contentDescription = null,
+                                            tint = if (lane.isValid) {
+                                                MaterialTheme.colorScheme.onPrimary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                            },
+                                            modifier = Modifier
+                                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                                .size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -229,7 +299,6 @@ fun NavigationView(
         }
 
         // 2b. Speed & Speed-Limit Badge (Bottom-Left above Cockpit)
-        val liveLoc by NavigationStateHolder.currentLocation.collectAsState()
         val speedLimitKmh by NavigationStateHolder.currentSpeedLimitKmh.collectAsState()
         val currentKmh = ((liveLoc?.speedMps ?: 0f) * 3.6f).roundToInt().coerceAtLeast(0)
         val isOverLimit = speedLimitKmh != null && speedLimitKmh!! > 0 && currentKmh > speedLimitKmh!! + 5

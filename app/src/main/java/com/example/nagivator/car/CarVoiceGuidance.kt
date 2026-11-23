@@ -231,6 +231,7 @@ class CarVoiceGuidance(context: Context) : TextToSpeech.OnInitListener {
     }
 
     private fun speakInternal(text: String, queueMode: Int) {
+        Log.i(TAG, "SPEAK: $text")
         try {
             audioManager.requestAudioFocus(audioFocusRequest)
         } catch (_: Exception) {}

@@ -29,6 +29,7 @@ import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.data.repository.TrafficRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
+import com.example.nagivator.domain.TurnGuidanceEngine
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.TrafficIncident
@@ -54,7 +55,7 @@ class CarNavigationScreen(
     private var locationJob: Job? = null
     private var trafficJob: Job? = null
     private var isRecalculating = false
-    private var lastAnnouncedStepIndex = -1
+    private val guidanceEngine = TurnGuidanceEngine()
     private var offRouteStrikeCount = 0
     private var lastRecalculateMs = 0L
     private var hasArrived = false
@@ -65,6 +66,7 @@ class CarNavigationScreen(
     }
 
     override fun onCreate(owner: LifecycleOwner) {
+        NavigationStateHolder.setCarNavigationActive(true)
         navManager.setNavigationManagerCallback(object : NavigationManagerCallback {
             override fun onStopNavigation() {
                 endNavigation()
@@ -118,6 +120,7 @@ class CarNavigationScreen(
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
+        NavigationStateHolder.setCarNavigationActive(false)
         locationJob?.cancel()
         trafficJob?.cancel()
         navManager.navigationEnded()
@@ -176,7 +179,7 @@ class CarNavigationScreen(
                 NavigationStateHolder.updateRoute(newRoute)
                 NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
                 surfaceRenderer.updateRoute(newRoute)
-                lastAnnouncedStepIndex = -1
+                guidanceEngine.reset()
                 CarToast.makeText(carContext, "Ausweichroute aktiv", CarToast.LENGTH_SHORT).show()
                 invalidate()
             }
@@ -251,10 +254,11 @@ class CarNavigationScreen(
                 )
                 val distToManeuver = distResults[0]
 
-                // Step completion (or recovery if one or more maneuvers were skipped at speed / GPS gap)
+                // Step completion (speed-adaptive threshold + recovery if maneuvers were skipped at speed / GPS gap)
+                val stepCompletionRadius = if (loc.speedMps > 20f) 65f else 45f
                 var targetIdx: Int? = null
                 if (currentIndex < steps.size - 1) {
-                    if (distToManeuver < 45f) {
+                    if (distToManeuver < stepCompletionRadius) {
                         targetIdx = currentIndex + 1
                     } else if (distToManeuver > 150f) {
                         for (k in (currentIndex + 1) until steps.size) {
@@ -270,17 +274,23 @@ class CarNavigationScreen(
 
                 if (targetIdx != null && targetIdx != currentIndex) {
                     NavigationStateHolder.updateStepIndex(targetIdx)
-                    lastAnnouncedStepIndex = -1
                     invalidate()
                     return
                 }
 
-                // Voice guidance triggers
-                if (lastAnnouncedStepIndex != currentIndex) {
-                    voiceGuidance.speak(currentStep.instruction)
-                    lastAnnouncedStepIndex = currentIndex
-                } else if (distToManeuver in 40f..80f && distToManeuver > 0) {
-                    voiceGuidance.speak("Jetzt: ${currentStep.instruction}")
+                // Speed-adaptive 3-stage voice guidance (Time-to-Maneuver, landmarks, compound turns)
+                val nextStep = steps.getOrNull(currentIndex + 1)
+                val prompt = guidanceEngine.evaluate(
+                    stepIndex = currentIndex,
+                    currentStep = currentStep,
+                    nextStep = nextStep,
+                    distanceToManeuverMeters = distToManeuver,
+                    speedMps = loc.speedMps,
+                    travelMode = TravelMode.CAR,
+                    roadSignals = NavigationStateHolder.roadSignals.value
+                )
+                if (!prompt.isNullOrBlank()) {
+                    voiceGuidance.speak(prompt)
                 }
             }
         }
@@ -311,7 +321,7 @@ class CarNavigationScreen(
                     NavigationStateHolder.updateRoute(newRoute)
                     NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
                     surfaceRenderer.updateRoute(newRoute)
-                    lastAnnouncedStepIndex = -1
+                    guidanceEngine.reset()
                     invalidate()
                 }
             } finally {
@@ -342,15 +352,25 @@ class CarNavigationScreen(
         val currentStep = route.steps[stepIndex]
         val nextStep = if (stepIndex < route.steps.size - 1) route.steps[stepIndex + 1] else null
 
-        // Maneuver
+        // Maneuver (with roundabout exit number + native lane guidance)
         val maneuver = CarManeuverConverter.toCarManeuver(
-            currentStep.maneuverType,
-            currentStep.maneuverModifier,
+            type = currentStep.maneuverType,
+            modifier = currentStep.maneuverModifier,
+            exitNumber = currentStep.roundaboutExit,
             carContext = carContext
         )
         val instruction = currentStep.instruction.ifBlank { "Route folgen" }
         val stepBuilder = Step.Builder(instruction)
             .setManeuver(maneuver)
+
+        if (currentStep.lanes.isNotEmpty()) {
+            val carLanes = CarManeuverConverter.toCarLanes(currentStep.lanes)
+            val lanesIcon = CarManeuverConverter.renderLanesIcon(currentStep.lanes)
+            if (carLanes.isNotEmpty() && lanesIcon != null) {
+                carLanes.forEach { stepBuilder.addLane(it) }
+                stepBuilder.setLanesImage(lanesIcon)
+            }
+        }
 
         // Travel Estimates (dynamic remaining distance + ETA)
         val currentLoc = NavigationStateHolder.currentLocation.value
@@ -385,8 +405,9 @@ class CarNavigationScreen(
 
         if (nextStep != null) {
             val nextManeuver = CarManeuverConverter.toCarManeuver(
-                nextStep.maneuverType,
-                nextStep.maneuverModifier,
+                type = nextStep.maneuverType,
+                modifier = nextStep.maneuverModifier,
+                exitNumber = nextStep.roundaboutExit,
                 carContext = carContext
             )
             val nextInstruction = nextStep.instruction.ifBlank { "Route folgen" }

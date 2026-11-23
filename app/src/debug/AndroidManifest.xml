@@ -2,13 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <receiver
-            android:name="com.example.nagivator.car.DebugDriveReceiver"
+            android:name="com.example.nagivator.debug.DebugDriveSimulatorReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_START" />
-                <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_OFF_ROUTE" />
-                <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_TELEPORT" />
-                <action android:name="com.verhuelsdonk.navigator.DEBUG_DRIVE_STOP" />
+                <action android:name="com.verhuelsdonk.navigator.debug.SIMULATE_DRIVE" />
             </intent-filter>
         </receiver>
     </application>

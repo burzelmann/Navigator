@@ -13,19 +13,34 @@ data class OsrmWaypoint(
 )
 
 @Serializable
+data class OsrmLane(
+    val indications: List<String> = emptyList(),
+    val valid: Boolean = false
+)
+
+@Serializable
+data class OsrmIntersection(
+    val lanes: List<OsrmLane> = emptyList()
+)
+
+@Serializable
 data class OsrmStep(
     val distance: Double = 0.0,
     val duration: Double = 0.0,
     val name: String = "",
     val ref: String = "",
     val destinations: String = "",
-    val maneuver: OsrmManeuver? = null
+    val exits: String = "",
+    @SerialName("rotary_name") val rotaryName: String = "",
+    val maneuver: OsrmManeuver? = null,
+    val intersections: List<OsrmIntersection> = emptyList()
 )
 
 @Serializable
 data class OsrmManeuver(
     val type: String = "",
     val modifier: String? = null,
+    val exit: Int? = null,
     val location: List<Double> = emptyList()
 )
 

@@ -19,6 +19,7 @@ import kotlin.math.tan
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.nagivator.car.CarNavigationHelper
+import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.data.local.NagivatorDatabase
 import com.example.nagivator.data.local.entity.OfflineRegionEntity
 import com.example.nagivator.data.local.entity.PoiEntity
@@ -200,6 +201,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     private var isRecalculatingOffRoute = false
+    private val phoneGuidanceEngine = com.example.nagivator.domain.TurnGuidanceEngine()
+    private val voiceGuidance = CarVoiceGuidance.getInstance(application)
 
     private fun checkNavigationProgress(currentLoc: LocationPoint) {
         val state = _uiState.value
@@ -247,6 +250,32 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.update { it.copy(currentRouteStepIndex = nextIdx) }
                     }
                     break
+                }
+            }
+
+            // 3. Smartphone Turn-by-Turn Voice Guidance (skipped if Android Auto is already speaking)
+            val activeStepIdx = _uiState.value.currentRouteStepIndex.coerceIn(0, steps.size - 1)
+            val activeStep = steps[activeStepIdx]
+            val maneuverLoc = activeStep.maneuverLocation
+            if (maneuverLoc != null && !NavigationStateHolder.isCarNavigationActive) {
+                val distRes = FloatArray(1)
+                Location.distanceBetween(
+                    currentLoc.latitude, currentLoc.longitude,
+                    maneuverLoc.latitude, maneuverLoc.longitude,
+                    distRes
+                )
+                val prompt = phoneGuidanceEngine.evaluate(
+                    stepIndex = activeStepIdx,
+                    currentStep = activeStep,
+                    nextStep = steps.getOrNull(activeStepIdx + 1),
+                    distanceToManeuverMeters = distRes[0],
+                    speedMps = currentLoc.speedMps,
+                    travelMode = state.travelMode,
+                    roadSignals = NavigationStateHolder.roadSignals.value
+                )
+                if (!prompt.isNullOrBlank()) {
+                    voiceGuidance.setMuted(_uiState.value.isMuted)
+                    voiceGuidance.speak(prompt)
                 }
             }
         }

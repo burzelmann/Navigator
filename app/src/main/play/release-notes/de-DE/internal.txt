@@ -1,3 +1,5 @@
-Neu in v20:
-• Auto-Navigation (Android Auto & Smartphone im Auto-Modus): Fahrzeug-Pfeil friert im Stand und bei langsamem Rollen (< 7 km/h) sowie bei ungenauem GPS-Signal (> 45° Abweichung) die letzte saubere Fahrtrichtung ein – kein Verdrehen mehr an roten Ampeln
-• Im Auto-Modus auf dem Smartphone wird nun der stabilisierte GPS-Kurs statt des Handy-Kompasses genutzt (Fußgänger-Modus bleibt unverändert)
+Neu in v21:
+• Geschwindigkeitsabhängige 3-Stufen-Abbiegeansagen (Stadt, Landstraße, Autobahn) mit natürlicher Distanzrundung & deutscher TTS-Sprachhygiene
+• Nativer Fahrspurassistent in Android Auto und im Smartphone-Banner
+• Kreisverkehr-Ausfahrtsnummern, Autobahn-Wegweiser (Richtung/Ausfahrt), verkettete Doppel-Manöver & OSM-Ampel-Landmarken
+• Turn-by-Turn-Sprachausgabe jetzt auch direkt in der Smartphone-Navigation aktiv

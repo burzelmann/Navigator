@@ -39,8 +39,16 @@ object NavigationStateHolder {
     @Volatile
     private var isSimulatedLocationActive = false
 
+    @Volatile
+    var isCarNavigationActive: Boolean = false
+        private set
+
     fun setSimulatedLocationActive(active: Boolean) {
         isSimulatedLocationActive = active
+    }
+
+    fun setCarNavigationActive(active: Boolean) {
+        isCarNavigationActive = active
     }
 
     fun updateLocation(point: LocationPoint, isSimulated: Boolean = false) {

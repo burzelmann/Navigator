@@ -226,7 +226,7 @@ class RoutingRepository {
         } ?: emptyList()
 
         val steps = osrmRoute.legs.flatMap { leg ->
-            leg.steps.map { step ->
+            leg.steps.mapIndexed { idx, step ->
                 // OSRM puts German Autobahn numbers ("A 57", "A 3") in `ref` while leaving `name` empty.
                 val effectiveRoadName = when {
                     step.name.isBlank() -> step.ref
@@ -236,12 +236,34 @@ class RoutingRepository {
                 val maneuverName = GermanManeuverTranslator.translate(
                     type = step.maneuver?.type ?: "",
                     modifier = step.maneuver?.modifier ?: "",
-                    rawName = effectiveRoadName
+                    rawName = effectiveRoadName,
+                    roundaboutExit = step.maneuver?.exit,
+                    destinations = step.destinations,
+                    exitRef = step.exits,
+                    rotaryName = step.rotaryName
                 )
                 val maneuverLocCoords = step.maneuver?.location
                 val maneuverPoint = if (maneuverLocCoords != null && maneuverLocCoords.size >= 2) {
                     LocationPoint(latitude = maneuverLocCoords[1], longitude = maneuverLocCoords[0])
                 } else null
+
+                // In OSRM, lane guidance for an upcoming turn is attached to the last intersection
+                // of the approaching step OR the first intersection of the maneuver step itself.
+                val prevStepLanes = leg.steps.getOrNull(idx - 1)
+                    ?.intersections
+                    ?.lastOrNull { it.lanes.isNotEmpty() }
+                    ?.lanes
+                val ownStepLanes = step.intersections
+                    .firstOrNull { it.lanes.isNotEmpty() }
+                    ?.lanes
+                val chosenLanes = (ownStepLanes ?: prevStepLanes)
+                    .orEmpty()
+                    .map { lane ->
+                        com.example.nagivator.domain.model.LaneInfo(
+                            indications = lane.indications,
+                            isValid = lane.valid
+                        )
+                    }
 
                 RouteStep(
                     instruction = maneuverName,
@@ -249,7 +271,14 @@ class RoutingRepository {
                     durationSeconds = step.duration,
                     maneuverType = step.maneuver?.type ?: "",
                     maneuverModifier = step.maneuver?.modifier ?: "",
-                    maneuverLocation = maneuverPoint
+                    maneuverLocation = maneuverPoint,
+                    roadName = step.name,
+                    roadRef = step.ref,
+                    destinations = step.destinations,
+                    exitRef = step.exits,
+                    rotaryName = step.rotaryName,
+                    roundaboutExit = step.maneuver?.exit,
+                    lanes = chosenLanes
                 )
             }
         }
