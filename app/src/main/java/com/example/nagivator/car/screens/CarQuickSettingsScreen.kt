@@ -9,14 +9,17 @@ import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Row
+import androidx.car.app.model.SectionedItemList
 import androidx.car.app.model.Template
+import androidx.car.app.model.Toggle
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
+import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.model.SpeedPreference
 import kotlinx.coroutines.Job
@@ -24,8 +27,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
- * Android Auto quick settings screen synced bidirectionally with the phone app's ProfileScreen:
- * Theme, Night Map Scheme, Map Perspective, Dynamic Auto-Zoom, Road Signals, Voice Mute, and Car Speed.
+ * Android Auto quick settings screen synced bidirectionally with the phone app's ProfileScreen.
+ * Uses native Android Auto Toggle switches for binary options and browsable rows opening
+ * native Radio-Button lists ([CarOptionPickerScreen]) for multi-choice options.
  */
 class CarQuickSettingsScreen(
     carContext: CarContext,
@@ -65,9 +69,69 @@ class CarQuickSettingsScreen(
         }
     }
 
-    private fun nextSpeedPreference(current: SpeedPreference): SpeedPreference {
-        val all = SpeedPreference.entries
-        return all[(all.indexOf(current) + 1) % all.size]
+    private fun themeSubtitle(mode: AppThemeMode): String = when (mode) {
+        AppThemeMode.SYSTEM -> "Folgt den Android-Systemeinstellungen"
+        AppThemeMode.LIGHT -> "Karte & App immer im hellen Design"
+        AppThemeMode.DARK -> "Karte & App immer im dunklen Design"
+    }
+
+    private fun speedSubtitle(speed: SpeedPreference): String = when (speed) {
+        SpeedPreference.SLOW -> "Gemütlich / Vorsichtig (+25 % Zeit)"
+        SpeedPreference.NORMAL -> "Standard-Tempo (Verkehrsfluss)"
+        SpeedPreference.FAST -> "Zügig / Freie Fahrt (-15 % Zeit)"
+    }
+
+    private fun openThemePicker() {
+        val modes = AppThemeMode.entries
+        screenManager.push(
+            CarOptionPickerScreen(
+                carContext = carContext,
+                title = "Darstellung",
+                options = modes.map { CarPickerOption(it.label, themeSubtitle(it)) },
+                selectedIndexProvider = {
+                    modes.indexOf(userSettingsRepository.settings.value.themeMode).coerceAtLeast(0)
+                },
+                onOptionSelected = { index ->
+                    userSettingsRepository.setThemeMode(modes[index])
+                    surfaceRenderer.requestRender()
+                }
+            )
+        )
+    }
+
+    private fun openNightSchemePicker() {
+        val schemes = MapColorScheme.entries
+        screenManager.push(
+            CarOptionPickerScreen(
+                carContext = carContext,
+                title = "Nachtschema",
+                options = schemes.map { CarPickerOption(it.label, it.description) },
+                selectedIndexProvider = {
+                    schemes.indexOf(userSettingsRepository.settings.value.mapColorScheme).coerceAtLeast(0)
+                },
+                onOptionSelected = { index ->
+                    userSettingsRepository.setMapColorScheme(schemes[index])
+                    surfaceRenderer.requestRender()
+                }
+            )
+        )
+    }
+
+    private fun openCarSpeedPicker() {
+        val speeds = SpeedPreference.entries
+        screenManager.push(
+            CarOptionPickerScreen(
+                carContext = carContext,
+                title = "Fahrtempo (Auto)",
+                options = speeds.map { CarPickerOption(it.label, speedSubtitle(it)) },
+                selectedIndexProvider = {
+                    speeds.indexOf(userSettingsRepository.settings.value.carSpeed).coerceAtLeast(0)
+                },
+                onOptionSelected = { index ->
+                    userSettingsRepository.setCarSpeed(speeds[index])
+                }
+            )
+        )
     }
 
     override fun onGetTemplate(): Template {
@@ -76,79 +140,85 @@ class CarQuickSettingsScreen(
         val currentScheme = settings.mapColorScheme
         val dynamicZoom = settings.dynamicZoomEnabled
         val showRoadSignals = settings.showRoadSignals
-        val currentPerspective = settings.carMapPerspective
-        val isMuted = settings.voiceMuted
+        val isHeadingUp = settings.carMapPerspective == MapPerspective.HEADING_UP
+        val voiceEnabled = !settings.voiceMuted
         val carSpeed = settings.carSpeed
 
-        val rows = listOf(
+        val toggleRows = listOf(
             Row.Builder()
-                .setTitle("Darstellung: ${currentTheme.label}")
-                .addText("Tippen zum Wechseln (System • Hell • Dunkel)")
-                .setOnClickListener {
-                    val nextTheme = CarNavigationHelper.nextThemeMode(currentTheme)
-                    userSettingsRepository.setThemeMode(nextTheme)
-                    surfaceRenderer.requestRender()
-                    invalidate()
-                }
-                .build(),
-            Row.Builder()
-                .setTitle("Nachtschema: ${currentScheme.label}")
-                .addText(currentScheme.description)
-                .setOnClickListener {
-                    val nextScheme = CarNavigationHelper.nextMapColorScheme(currentScheme)
-                    userSettingsRepository.setMapColorScheme(nextScheme)
-                    surfaceRenderer.requestRender()
-                    invalidate()
-                }
-                .build(),
-            Row.Builder()
-                .setTitle(
-                    "Kartenansicht: ${if (currentPerspective == MapPerspective.HEADING_UP) "Fahrtrichtung oben" else "Norden oben"}"
+                .setTitle("Sprachausgabe")
+                .addText(if (voiceEnabled) "Aktiv (synchron mit Smartphone)" else "Stumm (synchron mit Smartphone)")
+                .setToggle(
+                    Toggle.Builder { isChecked ->
+                        userSettingsRepository.setVoiceMuted(!isChecked)
+                        invalidate()
+                    }.setChecked(voiceEnabled).build()
                 )
-                .addText("Wird für künftige Fahrten gespeichert")
-                .setOnClickListener {
-                    surfaceRenderer.togglePerspective()
-                    invalidate()
-                }
                 .build(),
             Row.Builder()
-                .setTitle("Auto-Zoom: ${if (dynamicZoom) "Aktiv" else "Aus"}")
+                .setTitle("Fahrtrichtung oben")
+                .addText(if (isHeadingUp) "Aktiv – Karte dreht mit" else "Aus – Norden oben")
+                .setToggle(
+                    Toggle.Builder { isChecked ->
+                        val nextPerspective = if (isChecked) {
+                            MapPerspective.HEADING_UP
+                        } else {
+                            MapPerspective.NORTH_UP
+                        }
+                        userSettingsRepository.setCarMapPerspective(nextPerspective)
+                        surfaceRenderer.requestRender()
+                        invalidate()
+                    }.setChecked(isHeadingUp).build()
+                )
+                .build(),
+            Row.Builder()
+                .setTitle("Auto-Zoom")
                 .addText("Passt Zoom automatisch an Geschwindigkeit an")
-                .setOnClickListener {
-                    userSettingsRepository.setDynamicZoomEnabled(!dynamicZoom)
-                    invalidate()
-                }
+                .setToggle(
+                    Toggle.Builder { isChecked ->
+                        userSettingsRepository.setDynamicZoomEnabled(isChecked)
+                        invalidate()
+                    }.setChecked(dynamicZoom).build()
+                )
                 .build(),
             Row.Builder()
-                .setTitle("Kreuzungs-Symbole: ${if (showRoadSignals) "Aktiv" else "Aus"}")
+                .setTitle("Kreuzungs-Symbole")
                 .addText("Ampeln, Stopp, Vorfahrt achten & Kreisverkehre")
-                .setOnClickListener {
-                    userSettingsRepository.setShowRoadSignals(!showRoadSignals)
-                    surfaceRenderer.requestRender()
-                    invalidate()
-                }
+                .setToggle(
+                    Toggle.Builder { isChecked ->
+                        userSettingsRepository.setShowRoadSignals(isChecked)
+                        surfaceRenderer.requestRender()
+                        invalidate()
+                    }.setChecked(showRoadSignals).build()
+                )
+                .build()
+        )
+
+        val choiceRows = listOf(
+            Row.Builder()
+                .setTitle("Darstellung")
+                .addText(currentTheme.label)
+                .setBrowsable(true)
+                .setOnClickListener { openThemePicker() }
                 .build(),
             Row.Builder()
-                .setTitle("Sprachausgabe: ${if (isMuted) "Stumm" else "Aktiv"}")
-                .addText("Synchron mit der Smartphone-App")
-                .setOnClickListener {
-                    userSettingsRepository.setVoiceMuted(!isMuted)
-                    invalidate()
-                }
+                .setTitle("Nachtschema")
+                .addText("${currentScheme.label} • ${currentScheme.description}")
+                .setBrowsable(true)
+                .setOnClickListener { openNightSchemePicker() }
                 .build(),
             Row.Builder()
-                .setTitle("Fahrtempo (Auto): ${carSpeed.label}")
-                .addText("Beeinflusst die berechnete Ankunftszeit (ETA)")
-                .setOnClickListener {
-                    userSettingsRepository.setCarSpeed(nextSpeedPreference(carSpeed))
-                    invalidate()
-                }
+                .setTitle("Fahrtempo (Auto)")
+                .addText("${carSpeed.label} • ${speedSubtitle(carSpeed)}")
+                .setBrowsable(true)
+                .setOnClickListener { openCarSpeedPicker() }
                 .build()
         )
 
         val limit = maxListItems().coerceAtLeast(6)
-        val listBuilder = ItemList.Builder()
-        rows.take(limit).forEach { listBuilder.addItem(it) }
+        val togglesToShow = toggleRows.take(limit)
+        val remaining = (limit - togglesToShow.size).coerceAtLeast(0)
+        val choicesToShow = choiceRows.take(remaining)
 
         val actionStrip = ActionStrip.Builder()
             .addAction(
@@ -166,11 +236,29 @@ class CarQuickSettingsScreen(
             )
             .build()
 
-        return ListTemplate.Builder()
+        val templateBuilder = ListTemplate.Builder()
             .setTitle("Schnelleinstellungen")
             .setHeaderAction(Action.BACK)
             .setActionStrip(actionStrip)
-            .setSingleList(listBuilder.build())
-            .build()
+
+        if (togglesToShow.isNotEmpty()) {
+            val toggleList = ItemList.Builder().apply {
+                togglesToShow.forEach { addItem(it) }
+            }.build()
+            templateBuilder.addSectionedList(
+                SectionedItemList.create(toggleList, "Schalter")
+            )
+        }
+
+        if (choicesToShow.isNotEmpty()) {
+            val choiceList = ItemList.Builder().apply {
+                choicesToShow.forEach { addItem(it) }
+            }.build()
+            templateBuilder.addSectionedList(
+                SectionedItemList.create(choiceList, "Auswahl")
+            )
+        }
+
+        return templateBuilder.build()
     }
 }

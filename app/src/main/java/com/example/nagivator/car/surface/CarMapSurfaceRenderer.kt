@@ -757,11 +757,12 @@ private class CarHudOverlayView(context: Context) : View(context) {
         }
 
         // Visual Audio-Output Indicator ("Ansage" pill) whenever TTS is speaking.
-        // Positioned near top-right of safe area (below ActionStrip, never obscured by bottom CarToasts).
+        // Always placed below the top ActionStrip (>= 84 px) and left of the right MapActionStrip,
+        // so it is never hidden behind ActionStrip buttons or bottom CarToasts.
         if (isSpeaking) {
             val pillW = 136f
             val pillH = 40f
-            val topEdge = (safe.top + 12f).coerceAtLeast(16f)
+            val topEdge = maxOf(safe.top, 84) + 10f
             val pillRect = RectF(
                 rightEdge - pillW,
                 topEdge,
