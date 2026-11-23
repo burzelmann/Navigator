@@ -1,5 +1,5 @@
-Neu in v18:
-• Android Auto Schnelleinstellungen mit nativen Schaltern (Toggle) für Sprachausgabe, Fahrtrichtung oben, Auto-Zoom & Kreuzungs-Symbole
-• Übersichtliche Radio-Button-Auswahllisten für Darstellung, Nachtschema & Fahrtempo
-• Position des visuellen '🔊 Ansage'-Indikators im Android-Auto-HUD korrigiert (immer sauber unterhalb der oberen Buttons)
-• TTS-Service-Deklaration für zuverlässige Sprachausgabe auf aktuellen Android-Versionen ergänzt
+Neu in v19:
+• Hochwertige Offline-Stimmen (Android Best Practice): Automatische Wahl der besten lokalen deutschen HD-Stimme
+• Stimmenauswahl mit direktem Probehören im Smartphone-Profil sowie als Radio-Button-Liste in Android Auto (Optionen → Stimme)
+• Einstellbares Sprechtempo (Ruhig / Normal / Zügig)
+• 1-Tap-Button 'Offline-Sprachpakete laden / verwalten' zum Nachladen weiterer Android-Offline-Stimmen

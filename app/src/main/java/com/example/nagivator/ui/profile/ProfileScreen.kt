@@ -1,5 +1,8 @@
 package com.example.nagivator.ui.profile
 
+import android.content.Intent
+import android.speech.tts.TextToSpeech
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -19,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,16 +40,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.MapPerspective
 import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.MapColorScheme
+import com.example.nagivator.data.repository.VoiceSpeechRate
 import com.example.nagivator.domain.model.SpeedPreference
 
 @Composable
@@ -55,7 +65,25 @@ fun ProfileScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
-    val testVoiceGuidance = remember { CarVoiceGuidance.getInstance(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val voiceGuidance = remember { CarVoiceGuidance.getInstance(context) }
+    val availableVoices by voiceGuidance.availableVoices.collectAsState()
+    var reloadOnResume by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (reloadOnResume) {
+                    reloadOnResume = false
+                    voiceGuidance.reloadEngine()
+                } else {
+                    voiceGuidance.refreshAvailableVoices()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Column(
         modifier = modifier
@@ -247,7 +275,7 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedButton(
-                    onClick = { testVoiceGuidance.speakTestPrompt() },
+                    onClick = { voiceGuidance.speakTestPrompt() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
@@ -256,6 +284,104 @@ fun ProfileScreen(
                         modifier = Modifier.padding(end = 8.dp)
                     )
                     Text("Testansage abspielen (Lautstärke testen)")
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = "Stimme (Offline-TTS)",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = if (availableVoices.isEmpty()) {
+                        "System-Standardstimme aktiv. Über Sprachpakete lassen sich lokale HD-Stimmen nachladen."
+                    } else {
+                        "${availableVoices.size} lokale Offline-Stimme(n) erkannt • Tippen zum Probehören"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    FilterChip(
+                        selected = settings.voiceName == null,
+                        onClick = {
+                            viewModel.setVoiceName(null)
+                            voiceGuidance.speakVoicePreview(null, settings.voiceSpeechRate)
+                        },
+                        label = { Text("Auto (Beste HD)") }
+                    )
+                    availableVoices.forEach { voice ->
+                        FilterChip(
+                            selected = settings.voiceName == voice.name,
+                            onClick = {
+                                viewModel.setVoiceName(voice.name)
+                                voiceGuidance.speakVoicePreview(voice.name, settings.voiceSpeechRate)
+                            },
+                            label = { Text(voice.shortLabel) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Sprechtempo",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    VoiceSpeechRate.entries.forEachIndexed { index, rate ->
+                        SegmentedButton(
+                            selected = settings.voiceSpeechRate == rate,
+                            onClick = {
+                                viewModel.setVoiceSpeechRate(rate)
+                                voiceGuidance.speakVoicePreview(settings.voiceName, rate)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = VoiceSpeechRate.entries.size
+                            )
+                        ) {
+                            Text(rate.label)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        reloadOnResume = true
+                        val installIntent = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+                        val settingsIntent = Intent("com.android.settings.TTS_SETTINGS")
+                        try {
+                            context.startActivity(installIntent)
+                        } catch (_: Exception) {
+                            try {
+                                context.startActivity(settingsIntent)
+                            } catch (_: Exception) {
+                                reloadOnResume = false
+                                Toast.makeText(
+                                    context,
+                                    "Bitte Android-Einstellungen → Sprachausgabe öffnen",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("Offline-Sprachpakete laden / verwalten")
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

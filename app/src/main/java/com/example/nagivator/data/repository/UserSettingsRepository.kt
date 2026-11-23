@@ -23,6 +23,12 @@ enum class MapColorScheme(val label: String, val description: String) {
     HIGH_CONTRAST("Hochkontrast", "Maximale Straßenerkennung")
 }
 
+enum class VoiceSpeechRate(val label: String, val rate: Float) {
+    RELAXED("Ruhig", 0.92f),
+    NORMAL("Normal", 1.0f),
+    BRISK("Zügig", 1.12f)
+}
+
 data class ParkedCarLocation(
     val latitude: Double,
     val longitude: Double,
@@ -39,6 +45,8 @@ data class UserSettings(
     val dynamicZoomEnabled: Boolean = true,
     val showRoadSignals: Boolean = true,
     val voiceMuted: Boolean = false,
+    val voiceName: String? = null,
+    val voiceSpeechRate: VoiceSpeechRate = VoiceSpeechRate.NORMAL,
     val parkedCar: ParkedCarLocation? = null
 )
 
@@ -68,6 +76,8 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val dynamicZoom = prefs.getBoolean("dynamic_zoom_enabled", true)
         val showRoadSignals = prefs.getBoolean("show_road_signals", true)
         val voiceMuted = prefs.getBoolean("voice_muted", false)
+        val voiceName = prefs.getString("voice_name", null)?.takeIf { it.isNotBlank() }
+        val voiceRateName = prefs.getString("voice_speech_rate", VoiceSpeechRate.NORMAL.name)
         val parkedCar = if (prefs.contains("parked_car_lat") && prefs.contains("parked_car_lon")) {
             ParkedCarLocation(
                 latitude = prefs.getFloat("parked_car_lat", 0f).toDouble(),
@@ -107,6 +117,12 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             MapPerspective.NORTH_UP
         }
 
+        val voiceRate = try {
+            VoiceSpeechRate.valueOf(voiceRateName ?: VoiceSpeechRate.NORMAL.name)
+        } catch (_: Exception) {
+            VoiceSpeechRate.NORMAL
+        }
+
         return UserSettings(
             footSpeed = foot,
             carSpeed = car,
@@ -116,6 +132,8 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             dynamicZoomEnabled = dynamicZoom,
             showRoadSignals = showRoadSignals,
             voiceMuted = voiceMuted,
+            voiceName = voiceName,
+            voiceSpeechRate = voiceRate,
             parkedCar = parkedCar
         )
     }
@@ -159,6 +177,19 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         prefs.edit().putBoolean("voice_muted", muted).apply()
         NavigationStateHolder.setMuted(muted)
         _settings.update { it.copy(voiceMuted = muted) }
+    }
+
+    fun setVoiceName(name: String?) {
+        val clean = name?.takeIf { it.isNotBlank() }
+        prefs.edit().apply {
+            if (clean == null) remove("voice_name") else putString("voice_name", clean)
+        }.apply()
+        _settings.update { it.copy(voiceName = clean) }
+    }
+
+    fun setVoiceSpeechRate(rate: VoiceSpeechRate) {
+        prefs.edit().putString("voice_speech_rate", rate.name).apply()
+        _settings.update { it.copy(voiceSpeechRate = rate) }
     }
 
     fun saveParkedCar(

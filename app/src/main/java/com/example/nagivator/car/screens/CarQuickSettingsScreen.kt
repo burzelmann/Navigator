@@ -39,6 +39,7 @@ class CarQuickSettingsScreen(
     private val userSettingsRepository = UserSettingsRepository.getInstance(carContext)
     private val voiceGuidance = CarVoiceGuidance.getInstance(carContext)
     private var settingsJob: Job? = null
+    private var voicesJob: Job? = null
 
     init {
         lifecycle.addObserver(this)
@@ -50,10 +51,16 @@ class CarQuickSettingsScreen(
                 invalidate()
             }
         }
+        voicesJob = lifecycleScope.launch {
+            voiceGuidance.availableVoices.collectLatest {
+                invalidate()
+            }
+        }
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
         settingsJob?.cancel()
+        voicesJob?.cancel()
     }
 
     private fun maxListItems(): Int {
@@ -134,6 +141,40 @@ class CarQuickSettingsScreen(
         )
     }
 
+    private fun openVoicePicker() {
+        val voices = voiceGuidance.availableVoices.value
+        val options = buildList {
+            add(CarPickerOption("Automatisch (Beste HD)", "Wählt beste lokale Offline-Stimme"))
+            voices.forEach { voice ->
+                add(CarPickerOption(voice.displayName, voice.qualityLabel))
+            }
+        }
+        screenManager.push(
+            CarOptionPickerScreen(
+                carContext = carContext,
+                title = "Stimme (Offline)",
+                options = options,
+                selectedIndexProvider = {
+                    val currentName = userSettingsRepository.settings.value.voiceName
+                    if (currentName == null) {
+                        0
+                    } else {
+                        val idx = voices.indexOfFirst { it.name == currentName }
+                        if (idx >= 0) idx + 1 else 0
+                    }
+                },
+                onOptionSelected = { index ->
+                    val chosenName = if (index <= 0) null else voices.getOrNull(index - 1)?.name
+                    userSettingsRepository.setVoiceName(chosenName)
+                    voiceGuidance.speakVoicePreview(
+                        chosenName,
+                        userSettingsRepository.settings.value.voiceSpeechRate
+                    )
+                }
+            )
+        )
+    }
+
     override fun onGetTemplate(): Template {
         val settings = userSettingsRepository.settings.value
         val currentTheme = settings.themeMode
@@ -194,26 +235,49 @@ class CarQuickSettingsScreen(
                 .build()
         )
 
-        val choiceRows = listOf(
-            Row.Builder()
-                .setTitle("Darstellung")
-                .addText(currentTheme.label)
-                .setBrowsable(true)
-                .setOnClickListener { openThemePicker() }
-                .build(),
-            Row.Builder()
-                .setTitle("Nachtschema")
-                .addText("${currentScheme.label} • ${currentScheme.description}")
-                .setBrowsable(true)
-                .setOnClickListener { openNightSchemePicker() }
-                .build(),
-            Row.Builder()
-                .setTitle("Fahrtempo (Auto)")
-                .addText("${carSpeed.label} • ${speedSubtitle(carSpeed)}")
-                .setBrowsable(true)
-                .setOnClickListener { openCarSpeedPicker() }
-                .build()
-        )
+        val availableVoices = voiceGuidance.availableVoices.value
+        val activeVoiceLabel = when (val selectedName = settings.voiceName) {
+            null -> "Automatisch (Beste HD)"
+            else -> availableVoices.firstOrNull { it.name == selectedName }?.displayName
+                ?: "Automatisch (Beste HD)"
+        }
+
+        val choiceRows = buildList {
+            add(
+                Row.Builder()
+                    .setTitle("Darstellung")
+                    .addText(currentTheme.label)
+                    .setBrowsable(true)
+                    .setOnClickListener { openThemePicker() }
+                    .build()
+            )
+            add(
+                Row.Builder()
+                    .setTitle("Nachtschema")
+                    .addText("${currentScheme.label} • ${currentScheme.description}")
+                    .setBrowsable(true)
+                    .setOnClickListener { openNightSchemePicker() }
+                    .build()
+            )
+            add(
+                Row.Builder()
+                    .setTitle("Fahrtempo (Auto)")
+                    .addText("${carSpeed.label} • ${speedSubtitle(carSpeed)}")
+                    .setBrowsable(true)
+                    .setOnClickListener { openCarSpeedPicker() }
+                    .build()
+            )
+            if (availableVoices.size > 1) {
+                add(
+                    Row.Builder()
+                        .setTitle("Stimme (Offline)")
+                        .addText("$activeVoiceLabel • ${settings.voiceSpeechRate.label}")
+                        .setBrowsable(true)
+                        .setOnClickListener { openVoicePicker() }
+                        .build()
+                )
+            }
+        }
 
         val limit = maxListItems().coerceAtLeast(6)
         val togglesToShow = toggleRows.take(limit)

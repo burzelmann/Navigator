@@ -7,6 +7,7 @@ import com.example.nagivator.data.repository.AppThemeMode
 import com.example.nagivator.data.repository.MapColorScheme
 import com.example.nagivator.data.repository.UserSettings
 import com.example.nagivator.data.repository.UserSettingsRepository
+import com.example.nagivator.data.repository.VoiceSpeechRate
 import com.example.nagivator.domain.model.SpeedPreference
 import kotlinx.coroutines.flow.StateFlow
 
@@ -44,5 +45,13 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     fun setVoiceMuted(muted: Boolean) {
         userSettingsRepository.setVoiceMuted(muted)
+    }
+
+    fun setVoiceName(name: String?) {
+        userSettingsRepository.setVoiceName(name)
+    }
+
+    fun setVoiceSpeechRate(rate: VoiceSpeechRate) {
+        userSettingsRepository.setVoiceSpeechRate(rate)
     }
 }
