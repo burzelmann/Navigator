@@ -9,5 +9,6 @@ data class LocationPoint(
     val name: String = "",
     val address: String = "",
     val bearing: Float = 0f,
-    val speedMps: Float = 0f
+    val speedMps: Float = 0f,
+    val bearingAccuracyDegrees: Float? = null
 )

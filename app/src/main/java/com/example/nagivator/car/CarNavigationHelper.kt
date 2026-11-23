@@ -42,12 +42,16 @@ object CarNavigationHelper {
     }
 
     /**
-     * Preserves the last valid bearing while stationary so the map does not snap to North at red lights.
+     * Preserves the last valid car heading while stationary/creeping (< 2.0 m/s ≈ 7.2 km/h)
+     * or when GPS reports low bearing accuracy (> 45°), preventing 90°/random GPS-drift spins
+     * at red lights.
      */
     fun preserveBearingIfStationary(previous: LocationPoint?, incoming: LocationPoint): LocationPoint {
         if (previous == null) return incoming
-        val isStationaryWithoutBearing = incoming.speedMps < 0.8f && incoming.bearing == 0f
-        return if (isStationaryWithoutBearing) {
+        val isSlowOrStationary = incoming.speedMps < 2.0f
+        val hasPoorBearingAccuracy =
+            incoming.bearingAccuracyDegrees != null && incoming.bearingAccuracyDegrees > 45f
+        return if (isSlowOrStationary || hasPoorBearingAccuracy) {
             incoming.copy(bearing = previous.bearing)
         } else {
             incoming

@@ -57,7 +57,8 @@ class LocationRepository(context: Context) {
                         longitude = loc.longitude,
                         name = "Aktueller Standort",
                         bearing = if (loc.hasBearing()) loc.bearing else 0f,
-                        speedMps = if (loc.hasSpeed()) loc.speed else 0f
+                        speedMps = if (loc.hasSpeed()) loc.speed else 0f,
+                        bearingAccuracyDegrees = if (loc.hasBearingAccuracy()) loc.bearingAccuracyDegrees else null
                     )
                 )
             }
@@ -78,7 +79,8 @@ class LocationRepository(context: Context) {
                         longitude = loc.longitude,
                         name = "Aktueller Standort",
                         bearing = if (loc.hasBearing()) loc.bearing else 0f,
-                        speedMps = if (loc.hasSpeed()) loc.speed else 0f
+                        speedMps = if (loc.hasSpeed()) loc.speed else 0f,
+                        bearingAccuracyDegrees = if (loc.hasBearingAccuracy()) loc.bearingAccuracyDegrees else null
                     )
                 )
             }
@@ -99,7 +101,8 @@ class LocationRepository(context: Context) {
                             longitude = location.longitude,
                             name = "Aktueller Standort",
                             bearing = if (location.hasBearing()) location.bearing else 0f,
-                            speedMps = if (location.hasSpeed()) location.speed else 0f
+                            speedMps = if (location.hasSpeed()) location.speed else 0f,
+                            bearingAccuracyDegrees = if (location.hasBearingAccuracy()) location.bearingAccuracyDegrees else null
                         )
                     )
                 }

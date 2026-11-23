@@ -1,5 +1,3 @@
-Neu in v19:
-• Hochwertige Offline-Stimmen (Android Best Practice): Automatische Wahl der besten lokalen deutschen HD-Stimme
-• Stimmenauswahl mit direktem Probehören im Smartphone-Profil sowie als Radio-Button-Liste in Android Auto (Optionen → Stimme)
-• Einstellbares Sprechtempo (Ruhig / Normal / Zügig)
-• 1-Tap-Button 'Offline-Sprachpakete laden / verwalten' zum Nachladen weiterer Android-Offline-Stimmen
+Neu in v20:
+• Auto-Navigation (Android Auto & Smartphone im Auto-Modus): Fahrzeug-Pfeil friert im Stand und bei langsamem Rollen (< 7 km/h) sowie bei ungenauem GPS-Signal (> 45° Abweichung) die letzte saubere Fahrtrichtung ein – kein Verdrehen mehr an roten Ampeln
+• Im Auto-Modus auf dem Smartphone wird nun der stabilisierte GPS-Kurs statt des Handy-Kompasses genutzt (Fußgänger-Modus bleibt unverändert)

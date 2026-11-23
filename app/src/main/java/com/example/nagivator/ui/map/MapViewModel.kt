@@ -18,6 +18,7 @@ import kotlin.math.ln
 import kotlin.math.tan
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.data.local.NagivatorDatabase
 import com.example.nagivator.data.local.entity.OfflineRegionEntity
 import com.example.nagivator.data.local.entity.PoiEntity
@@ -178,7 +179,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 .catch { /* ignore location errors */ }
                 .collect { location ->
                     val isFirstFix = _uiState.value.currentLocation == null
-                    _uiState.update { it.copy(currentLocation = location) }
+                    val stabilizedLocation = if (_uiState.value.travelMode == TravelMode.CAR) {
+                        CarNavigationHelper.preserveBearingIfStationary(
+                            _uiState.value.currentLocation,
+                            location
+                        )
+                    } else {
+                        location
+                    }
+                    _uiState.update { it.copy(currentLocation = stabilizedLocation) }
                     NavigationStateHolder.updateLocation(location)
                     
                     if (isFirstFix) {

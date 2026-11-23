@@ -33,10 +33,28 @@ class CarNavigationHelperTest {
     @Test
     fun preserveBearingIfStationary_keepsLastHeadingAtRedLight() {
         val prev = LocationPoint(latitude = 51.0, longitude = 6.0, bearing = 135f, speedMps = 10f)
-        val stopped = LocationPoint(latitude = 51.0, longitude = 6.0, bearing = 0f, speedMps = 0f)
-        val moving = LocationPoint(latitude = 51.001, longitude = 6.001, bearing = 90f, speedMps = 5f)
+        val stoppedZero = LocationPoint(latitude = 51.0, longitude = 6.0, bearing = 0f, speedMps = 0f)
+        val stoppedDrift90 = LocationPoint(latitude = 51.0, longitude = 6.0, bearing = 225f, speedMps = 0.4f)
+        val creepingDrift = LocationPoint(latitude = 51.0, longitude = 6.0, bearing = 45f, speedMps = 1.5f)
+        val poorAccuracy = LocationPoint(
+            latitude = 51.001,
+            longitude = 6.001,
+            bearing = 310f,
+            speedMps = 6f,
+            bearingAccuracyDegrees = 65f
+        )
+        val moving = LocationPoint(
+            latitude = 51.001,
+            longitude = 6.001,
+            bearing = 90f,
+            speedMps = 5f,
+            bearingAccuracyDegrees = 10f
+        )
 
-        assertEquals(135f, CarNavigationHelper.preserveBearingIfStationary(prev, stopped).bearing, 0.01f)
+        assertEquals(135f, CarNavigationHelper.preserveBearingIfStationary(prev, stoppedZero).bearing, 0.01f)
+        assertEquals(135f, CarNavigationHelper.preserveBearingIfStationary(prev, stoppedDrift90).bearing, 0.01f)
+        assertEquals(135f, CarNavigationHelper.preserveBearingIfStationary(prev, creepingDrift).bearing, 0.01f)
+        assertEquals(135f, CarNavigationHelper.preserveBearingIfStationary(prev, poorAccuracy).bearing, 0.01f)
         assertEquals(90f, CarNavigationHelper.preserveBearingIfStationary(prev, moving).bearing, 0.01f)
     }
 

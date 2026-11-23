@@ -3,6 +3,7 @@ package com.example.nagivator.ui.map
 import android.Manifest
 import android.app.Activity
 import android.view.WindowManager
+import com.example.nagivator.domain.model.TravelMode
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
@@ -159,7 +160,7 @@ fun MapScreen(
         MapLibreMapView(
             modifier = Modifier.fillMaxSize(),
             currentLocation = uiState.currentLocation,
-            azimuthDegrees = azimuthDegrees,
+            azimuthDegrees = if (uiState.travelMode == TravelMode.CAR) null else azimuthDegrees,
             isDarkTheme = isDarkTheme,
             isNavigating = uiState.isNavigating,
             isOverviewMode = uiState.isOverviewMode,
