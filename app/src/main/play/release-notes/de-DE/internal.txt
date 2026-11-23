@@ -1,5 +1,4 @@
-Neu in v21:
-• Geschwindigkeitsabhängige 3-Stufen-Abbiegeansagen (Stadt, Landstraße, Autobahn) mit natürlicher Distanzrundung & deutscher TTS-Sprachhygiene
-• Nativer Fahrspurassistent in Android Auto und im Smartphone-Banner
-• Kreisverkehr-Ausfahrtsnummern, Autobahn-Wegweiser (Richtung/Ausfahrt), verkettete Doppel-Manöver & OSM-Ampel-Landmarken
-• Turn-by-Turn-Sprachausgabe jetzt auch direkt in der Smartphone-Navigation aktiv
+Neu in v22 (aus 1:1-Echtzeit-Testfahrten optimiert):
+• Fahrspurassistent & Spurhinweise gegen Abbiegerichtung plausibilisiert (keine veralteten Spuren mehr bei Richtungs- oder Namenswechsel)
+• Kreisverkehr-Ausfahrtszahl (1, 2, 3, ...) jetzt direkt im Android-Auto-Icon sichtbar; überflüssige 'Kreisverkehr verlassen'-Ansagen & Sub-Banner entfernt
+• Natürliche deutsche Präpositionen bei Straßennamen mit 'Am / Im / An / Zur / Zum' (z. B. 'in die Straße Am Lindchen')

@@ -247,16 +247,38 @@ class RoutingRepository {
                     LocationPoint(latitude = maneuverLocCoords[1], longitude = maneuverLocCoords[0])
                 } else null
 
-                // In OSRM, lane guidance for an upcoming turn is attached to the last intersection
-                // of the approaching step OR the first intersection of the maneuver step itself.
-                val prevStepLanes = leg.steps.getOrNull(idx - 1)
-                    ?.intersections
-                    ?.lastOrNull { it.lanes.isNotEmpty() }
-                    ?.lanes
-                val ownStepLanes = step.intersections
-                    .firstOrNull { it.lanes.isNotEmpty() }
-                    ?.lanes
-                val chosenLanes = (ownStepLanes ?: prevStepLanes)
+                // In OSRM, lane guidance for an upcoming turn is attached either to the maneuver's
+                // own first intersection OR (for approach lanes) to the previous step's last
+                // intersection — but ONLY inherit previous-step lanes when this step is a real
+                // turn/fork/ramp and the valid lane indications actually match this maneuver's direction.
+                val mType = (step.maneuver?.type ?: "").lowercase().trim()
+                val mMod = (step.maneuver?.modifier ?: "").lowercase().trim()
+                val isLaneRelevantStep = mType != "new name" &&
+                    mType != "depart" &&
+                    mType != "arrive" &&
+                    mType != "exit roundabout" &&
+                    mType != "exit rotary"
+
+                val ownStepLanes = if (isLaneRelevantStep) {
+                    step.intersections.firstOrNull { it.lanes.isNotEmpty() }?.lanes
+                } else null
+
+                val matchingPrevLanes = if (isLaneRelevantStep && ownStepLanes == null) {
+                    val candidate = leg.steps.getOrNull(idx - 1)
+                        ?.intersections
+                        ?.lastOrNull { it.lanes.isNotEmpty() }
+                        ?.lanes
+                    candidate?.takeIf { lanes ->
+                        val validInds = lanes.filter { it.valid }.flatMap { it.indications }.map { it.lowercase() }
+                        when {
+                            mMod.contains("left") -> validInds.any { it.contains("left") }
+                            mMod.contains("right") -> validInds.any { it.contains("right") }
+                            else -> false
+                        }
+                    }
+                } else null
+
+                val chosenLanes = (ownStepLanes ?: matchingPrevLanes)
                     .orEmpty()
                     .map { lane ->
                         com.example.nagivator.domain.model.LaneInfo(

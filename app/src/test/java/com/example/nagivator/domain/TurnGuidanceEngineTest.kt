@@ -116,9 +116,33 @@ class TurnGuidanceEngineTest {
         val engine = TurnGuidanceEngine()
         val newName = RouteStep("Weiter auf Bahnhofstraße", 300.0, 20.0, maneuverType = "new name")
         val straightContinue = RouteStep("Dem Straßenverlauf folgen", 300.0, 20.0, maneuverType = "continue", maneuverModifier = "straight")
+        val exitRoundabout = RouteStep("Kreisverkehr verlassen", 50.0, 5.0, maneuverType = "exit roundabout", maneuverModifier = "right")
 
         assertNull(engine.evaluate(0, newName, null, 200f, 13f, TravelMode.CAR))
         assertNull(engine.evaluate(1, straightContinue, null, 50f, 13f, TravelMode.CAR))
+        assertNull(engine.evaluate(2, exitRoundabout, null, 30f, 10f, TravelMode.CAR))
+    }
+
+    @Test
+    fun laneHintNeverContradictsManeuverDirectionAndPrepositionHandlesAmIm() {
+        val engine = TurnGuidanceEngine()
+        // Rightmost lane valid, but maneuver is LEFT -> plausibility guard must suppress "Rechts einordnen"
+        val mismatchedLeftTurn = RouteStep(
+            instruction = "Links abbiegen in die Straße Im Bergwinkel",
+            distanceMeters = 300.0,
+            durationSeconds = 25.0,
+            maneuverType = "turn",
+            maneuverModifier = "left",
+            roadName = "Im Bergwinkel",
+            lanes = listOf(
+                LaneInfo(listOf("straight"), isValid = false),
+                LaneInfo(listOf("right"), isValid = true)
+            )
+        )
+        val prompt = engine.evaluate(0, mismatchedLeftTurn, null, 220f, 12f, TravelMode.CAR)
+        assertNotNull(prompt)
+        assertTrue("Must not say Rechts einordnen for left turn: $prompt", !prompt!!.contains("Rechts einordnen"))
+        assertTrue("Expected natural preposition: $prompt", prompt.contains("in die Straße Im Bergwinkel"))
     }
 
     @Test

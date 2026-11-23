@@ -12,7 +12,7 @@ object GermanManeuverTranslator {
         rotaryName: String = ""
     ): String {
         val streetName = rawName.trim()
-        val streetStr = if (streetName.isNotBlank()) " auf $streetName" else ""
+        val streetStr = formatStreetTarget(streetName)
         val destStr = formatDestinations(destinations)
         val directionStr = if (destStr.isNotBlank()) " Richtung $destStr" else ""
         val exitStr = exitRef.trim().takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
@@ -77,6 +77,28 @@ object GermanManeuverTranslator {
             else -> if (streetName.isNotBlank()) "Dem Weg folgen auf $streetName" else "Dem Straßenverlauf folgen"
         }
     }
+
+    /**
+     * Formats a German street target with natural preposition ("auf Hauptstraße",
+     * but "in die Straße Am Lindchen" / "in die Straße Im Bergwinkel" when the street
+     * name itself already begins with a German preposition).
+     */
+    fun formatStreetTarget(streetName: String): String {
+        val clean = streetName.trim()
+        if (clean.isBlank()) return ""
+        val startsWithPreposition = PREPOSITION_PREFIXES.any { prefix ->
+            clean.startsWith(prefix, ignoreCase = true)
+        }
+        return if (startsWithPreposition) {
+            " in die Straße $clean"
+        } else {
+            " auf $clean"
+        }
+    }
+
+    private val PREPOSITION_PREFIXES = listOf(
+        "Am ", "Im ", "An ", "Zur ", "Zum ", "In der ", "In den ", "Auf der ", "Auf dem ", "Auf den ", "Vor dem ", "Vor der "
+    )
 
     /**
      * Extracts up to 2 concise destination names from OSRM `destinations` strings
@@ -147,7 +169,7 @@ object GermanManeuverTranslator {
                 step.roadRef.isNotBlank() -> step.roadRef
                 else -> ""
             }
-            if (clean.isNotBlank()) " auf $clean" else ""
+            formatStreetTarget(clean)
         } else ""
 
         val destStr = if (includeTarget) {

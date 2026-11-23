@@ -71,9 +71,50 @@ object CarManeuverConverter {
             else -> Maneuver.Builder(Maneuver.TYPE_STRAIGHT) to R.drawable.ic_maneuver_straight
         }
         if (carContext != null) {
-            builder.setIcon(CarIcon.Builder(IconCompat.createWithResource(carContext, iconRes)).build())
+            val isRoundaboutWithExit =
+                (typeNorm == "roundabout" || typeNorm == "rotary") && exitNumber != null && exitNumber > 0
+            if (isRoundaboutWithExit) {
+                builder.setIcon(renderRoundaboutExitIcon(exitNumber!!))
+            } else {
+                builder.setIcon(CarIcon.Builder(IconCompat.createWithResource(carContext, iconRes)).build())
+            }
         }
         return builder.build()
+    }
+
+    /**
+     * Renders a crisp white roundabout icon with the exit number centered inside the ring
+     * so drivers see the exit count (1, 2, 3, ...) at a single glance on Android Auto.
+     */
+    fun renderRoundaboutExitIcon(exitNumber: Int): CarIcon {
+        val size = 128
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val cx = size / 2f
+        val cy = size * 0.44f
+        val radius = 34f
+
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 10f
+            strokeCap = Paint.Cap.ROUND
+        }
+        // Roundabout ring + bottom entry stem
+        canvas.drawCircle(cx, cy, radius, ringPaint)
+        canvas.drawLine(cx, cy + radius, cx, size - 10f, ringPaint)
+
+        // Centered bold exit number
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 44f
+            textAlign = Paint.Align.CENTER
+            isFakeBoldText = true
+        }
+        val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
+        canvas.drawText(exitNumber.toString(), cx, textY, textPaint)
+
+        return CarIcon.Builder(IconCompat.createWithBitmap(bitmap)).build()
     }
 
     fun mapIndicationToLaneShape(indication: String): Int = when (indication.lowercase().trim()) {

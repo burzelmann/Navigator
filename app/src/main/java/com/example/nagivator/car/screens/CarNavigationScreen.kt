@@ -350,7 +350,13 @@ class CarNavigationScreen(
 
         val stepIndex = NavigationStateHolder.currentStepIndex.value.coerceIn(0, route.steps.size - 1)
         val currentStep = route.steps[stepIndex]
-        val nextStep = if (stepIndex < route.steps.size - 1) route.steps[stepIndex + 1] else null
+        // Skip redundant "exit roundabout" / "exit rotary" step in the sub-banner so the next real turn is shown
+        val nextStep = ((stepIndex + 1) until route.steps.size)
+            .map { route.steps[it] }
+            .firstOrNull { s ->
+                val t = s.maneuverType.lowercase().trim()
+                t != "exit roundabout" && t != "exit rotary"
+            }
 
         // Maneuver (with roundabout exit number + native lane guidance)
         val maneuver = CarManeuverConverter.toCarManeuver(

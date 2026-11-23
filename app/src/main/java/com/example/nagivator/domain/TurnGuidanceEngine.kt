@@ -112,7 +112,7 @@ class TurnGuidanceEngine {
                 return "In $distText erreichen Sie Ihr Ziel."
             }
 
-            val lanePrefix = if (travelMode == TravelMode.CAR) buildLaneHint(currentStep.lanes) else ""
+            val lanePrefix = if (travelMode == TravelMode.CAR) buildLaneHint(currentStep) else ""
             val phrase = GermanManeuverTranslator.buildSpokenPhrase(
                 step = currentStep,
                 includeTarget = true,
@@ -161,6 +161,7 @@ class TurnGuidanceEngine {
         val type = step.maneuverType.lowercase().trim()
         val mod = step.maneuverModifier.lowercase().trim()
         if (type == "new name") return true
+        if (type == "exit roundabout" || type == "exit rotary") return true
         if (type == "continue" && (mod.isBlank() || mod == "straight")) return true
         return false
     }
@@ -207,15 +208,18 @@ class TurnGuidanceEngine {
         return currentStep.distanceMeters.takeIf { it > 0.0 }
     }
 
-    private fun buildLaneHint(lanes: List<LaneInfo>): String {
+    private fun buildLaneHint(step: RouteStep): String {
+        val lanes = step.lanes
         if (lanes.size < 2) return ""
         val validIndices = lanes.mapIndexedNotNull { idx, lane -> if (lane.isValid) idx else null }
         if (validIndices.isEmpty() || validIndices.size == lanes.size) return ""
+        val mod = step.maneuverModifier.lowercase().trim()
         val allLeftSide = validIndices.all { it == 0 }
         val allRightSide = validIndices.all { it == lanes.lastIndex }
         return when {
-            allLeftSide -> "Links einordnen und "
-            allRightSide -> "Rechts einordnen und "
+            // Plausibility guard: never say "Links einordnen" for a right turn or vice versa
+            allLeftSide && !mod.contains("right") -> "Links einordnen und "
+            allRightSide && !mod.contains("left") -> "Rechts einordnen und "
             else -> ""
         }
     }
