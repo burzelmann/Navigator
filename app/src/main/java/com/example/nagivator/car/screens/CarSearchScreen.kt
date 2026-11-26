@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.data.local.NagivatorDatabase
+import com.example.nagivator.data.repository.OfflineSearchIndexRepository
 import com.example.nagivator.data.repository.PoiRepository
 import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.data.repository.TripHistoryRepository
@@ -34,6 +35,7 @@ class CarSearchScreen(
     private val db = NagivatorDatabase.getDatabase(carContext)
     private val poiRepository = PoiRepository(db.poiDao(), db.savedRouteDao())
     private val tripHistoryRepository = TripHistoryRepository(db.tripHistoryDao())
+    private val offlineSearchIndexRepository = OfflineSearchIndexRepository.getInstance(carContext)
     private val routingRepository = RoutingRepository()
 
     private var currentQuery: String = ""
@@ -118,7 +120,17 @@ class CarSearchScreen(
                         address = "Offline-Verlauf"
                     )
                 }
-            val combined = (localPois + localTrips).take(6)
+            val offlineIndexMatches = runCatching {
+                offlineSearchIndexRepository.searchOffline(
+                    query = query,
+                    biasLat = userLoc?.latitude,
+                    biasLon = userLoc?.longitude,
+                    limit = 6
+                )
+            }.getOrDefault(emptyList())
+            val combined = (localPois + localTrips + offlineIndexMatches)
+                .distinctBy { "${it.name.lowercase()}|${it.address.lowercase()}" }
+                .take(6)
             searchResults = combined
             if (combined.isEmpty()) {
                 CarToast.makeText(

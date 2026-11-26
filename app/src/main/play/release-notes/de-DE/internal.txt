@@ -1,3 +1,3 @@
-Neu in v23:
-• Zielsuche behoben: Sauberer App-User-Agent für Photon (behebt HTTP-403-Sperre) + automatischer OpenStreetMap-Nominatim-Fallback; Android-Auto-Tastatur verdeckt Trefferliste nicht mehr
-• Persönliches Strecken-Lernen (Opt-in im Profil, nur Auto-Modus): Merkt sich lokal auf dem Gerät ab 3× bewusster Abweichung bevorzugte Strecken und schlägt sie künftig als '⭐ Bevorzugte Route' vor (einzeln oder komplett löschbar)
+• Offline-Zielsuche für heruntergeladene Kartenregionen (Smartphone & Android Auto): Beim Karten-Download wird automatisch ein kompakter Suchindex (Orte, Straßen, Tankstellen, Ladestationen, Apotheken, Supermärkte, Bahnhöfe) lokal gespeichert.
+• Automatischer Offline-Fallback: Ohne Internet durchsucht die App sofort Favoriten, Verlauf und heruntergeladene Regionen.
+• Ausfallsicherer Index-Download über Overpass API mit Photon-BBox-Fallback.

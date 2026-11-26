@@ -51,7 +51,8 @@
   - **Datengrößen-Schätzung:** Anzeige von Kachelanzahl und geschätzter MB-Größe vor dem Download.
   - **Gleitendes 10s-ETA:** Live-Restzeitanzeige basierend auf der Download-Geschwindigkeit der letzten 10 Sekunden.
   - **Automatische Regionen-Benennung:** Ortsnamenerkennung per Reverse-Geocoding.
-  - **Verwaltungsmenü:** Einzelne Regionen gezielt aktualisieren oder löschen.
+  - **Lokaler Offline-Suchindex (`OfflineSearchIndexRepository`):** Lädt beim Regionen-Download automatisch Orte, benannte Straßen und wichtige POIs (Tankstellen, Supermärkte, Apotheken, Bahnhöfe, Parkplätze) in Room/SQLite — ermöglicht blitzschnelle Offline-Suche auf Smartphone & Android Auto auch im Funkloch.
+  - **Verwaltungsmenü:** Einzelne Regionen gezielt aktualisieren oder löschen (inkl. automatischer Bereinigung des Suchindex).
 
 - ❤️ **Favoriten, Fahrtenverlauf & Parkplatz-Merker:**
   - 100% offline gespeicherte Lieblingsorte, Favoriten-Routen und **Fahrtenverlauf (`TripHistoryEntity`)** in der lokalen Room-Datenbank (mit **Nochmal starten** & **Rückweg starten**).

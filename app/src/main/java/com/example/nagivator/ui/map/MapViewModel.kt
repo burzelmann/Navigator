@@ -28,6 +28,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.example.nagivator.data.repository.LearnedRouteRepository
 import com.example.nagivator.data.repository.LocationRepository
+import com.example.nagivator.data.repository.OfflineSearchIndexRepository
 import com.example.nagivator.data.repository.OrientationRepository
 import com.example.nagivator.data.repository.PoiRepository
 import com.example.nagivator.data.repository.RoutingRepository
@@ -205,6 +206,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val phoneGuidanceEngine = com.example.nagivator.domain.TurnGuidanceEngine()
     private val phoneDeviationTracker = com.example.nagivator.domain.RouteDeviationTracker()
     private val learnedRouteRepository = LearnedRouteRepository.getInstance(application)
+    private val offlineSearchIndexRepository = OfflineSearchIndexRepository.getInstance(application)
     private val voiceGuidance = CarVoiceGuidance.getInstance(application)
 
     private fun checkNavigationProgress(currentLoc: LocationPoint) {
@@ -602,7 +604,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             address = "Offline-Verlauf"
                         )
                     }
-                val combined = (localPoiMatches + localTripMatches).take(8)
+                val offlineIndexMatches = runCatching {
+                    offlineSearchIndexRepository.searchOffline(
+                        query = query,
+                        biasLat = loc?.latitude,
+                        biasLon = loc?.longitude,
+                        limit = 8
+                    )
+                }.getOrDefault(emptyList())
+                val combined = (localPoiMatches + localTripMatches + offlineIndexMatches)
+                    .distinctBy { "${it.name.lowercase()}|${it.address.lowercase()}" }
+                    .take(8)
                 _uiState.update {
                     it.copy(
                         searchResults = combined,
@@ -1101,6 +1113,22 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                             sizeMB = actualMb
                                         )
                                     )
+                                    val indexedCount = runCatching {
+                                        offlineSearchIndexRepository.buildIndexForRegion(
+                                            regionName = regionName,
+                                            minLat = estimate.minLat,
+                                            maxLat = estimate.maxLat,
+                                            minLon = estimate.minLon,
+                                            maxLon = estimate.maxLon
+                                        )
+                                    }.getOrDefault(0)
+                                    if (indexedCount > 0) {
+                                        _uiState.update {
+                                            it.copy(
+                                                downloadStatusMessage = "Vektor-Region '$regionName' gespeichert (%.1f MB) • $indexedCount Offline-Ziele indiziert!".format(actualMb)
+                                            )
+                                        }
+                                    }
                                 }
                                 _uiState.update {
                                     it.copy(
@@ -1165,6 +1193,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteOfflineRegion(context: Context, controller: MapLibreController?, region: OfflineRegionEntity) {
         viewModelScope.launch {
             poiRepository.deleteOfflineRegion(region)
+            runCatching { offlineSearchIndexRepository.deleteIndexForRegion(region.name) }
             try {
                 OfflineManager.getInstance(context.applicationContext)
                     .listOfflineRegions(object : OfflineManager.ListOfflineRegionsCallback {

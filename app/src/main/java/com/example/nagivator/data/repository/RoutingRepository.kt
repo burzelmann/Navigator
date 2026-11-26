@@ -392,6 +392,9 @@ class RoutingRepository {
     companion object {
         private const val APP_USER_AGENT = "Nagivator/1.0 (Android App; com.verhuelsdonk.navigator)"
 
+        @Volatile
+        var debugSimulateOfflineSearch: Boolean = false
+
         fun isPlausibleLearnedRoute(
             learnedDistanceMeters: Double,
             fastestStandardDistanceMeters: Double
@@ -578,6 +581,9 @@ class RoutingRepository {
     ): Result<List<LocationPoint>> = withContext(Dispatchers.IO) {
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
+            if (debugSimulateOfflineSearch) {
+                throw IOException("Simulated offline mode")
+            }
 
             // 1. Primary: Photon (fast, location-biased)
             val photonPlaces = try {

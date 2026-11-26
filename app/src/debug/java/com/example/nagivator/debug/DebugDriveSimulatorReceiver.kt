@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.example.nagivator.car.CarNavigationHelper
+import com.example.nagivator.data.repository.OfflineSearchIndexRepository
 import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
@@ -52,7 +53,20 @@ class DebugDriveSimulatorReceiver : BroadcastReceiver() {
                     LocationPoint(51.7732232, 6.2923022, "Scholtenweg 15, Kalkar"),
                     LocationPoint(51.4661307, 6.4675776, "Im Bergwinkel 9, Rheurdt")
                 )
+                "index_kalkar_offline_test" -> {
+                    val repo = OfflineSearchIndexRepository.getInstance(context)
+                    val count = repo.buildIndexForRegion(
+                        regionName = "Kalkar",
+                        minLat = 51.720,
+                        maxLat = 51.790,
+                        minLon = 6.240,
+                        maxLon = 6.350
+                    )
+                    RoutingRepository.debugSimulateOfflineSearch = true
+                    Log.i(TAG, "OFFLINE_INDEX_READY count=$count")
+                }
                 "stop" -> {
+                    RoutingRepository.debugSimulateOfflineSearch = false
                     NavigationStateHolder.setSimulatedLocationActive(false)
                     NavigationStateHolder.stopNavigation()
                 }
