@@ -31,6 +31,7 @@ import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.ui.favorites.FavoritesScreen
 import com.example.nagivator.ui.map.MapScreen
 import com.example.nagivator.ui.map.MapViewModel
+import com.example.nagivator.ui.offline.OfflineManagerScreen
 import com.example.nagivator.ui.profile.ProfileScreen
 import com.example.nagivator.ui.theme.NagivatorTheme
 
@@ -65,7 +66,23 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NagivatorApp(isDarkTheme: Boolean) {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.MAP) }
+    var showOfflineManagerFromProfile by rememberSaveable { mutableStateOf(false) }
     val mapViewModel: MapViewModel = viewModel()
+    val mapUiState by mapViewModel.uiState.collectAsState()
+    val allOfflineRegions by mapViewModel.allOfflineRegions.collectAsState()
+
+    if (showOfflineManagerFromProfile) {
+        OfflineManagerScreen(
+            viewModel = mapViewModel,
+            mapController = null,
+            onBack = { showOfflineManagerFromProfile = false },
+            onSwitchToMap = {
+                showOfflineManagerFromProfile = false
+                currentDestination = AppDestinations.MAP
+            }
+        )
+        return
+    }
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
@@ -113,7 +130,13 @@ fun NagivatorApp(isDarkTheme: Boolean) {
                     )
                 }
                 AppDestinations.PROFILE -> {
+                    val totalOfflineMB = allOfflineRegions.sumOf { it.sizeMB } +
+                        mapUiState.installedRoutingSegments.sumOf { it.sizeMB }
                     ProfileScreen(
+                        offlineRegionCount = allOfflineRegions.size,
+                        offlineRoutingCount = mapUiState.installedRoutingSegments.size,
+                        offlineTotalMB = totalOfflineMB,
+                        onOpenOfflineManager = { showOfflineManagerFromProfile = true },
                         modifier = Modifier.padding(innerPadding)
                     )
                 }

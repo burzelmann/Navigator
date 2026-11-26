@@ -5,6 +5,12 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.example.nagivator.data.local.entity.OfflineSearchPlaceEntity
+import kotlinx.coroutines.flow.Flow
+
+data class RegionPlaceCount(
+    val regionName: String,
+    val placeCount: Int
+)
 
 @Dao
 interface OfflineSearchPlaceDao {
@@ -37,4 +43,7 @@ interface OfflineSearchPlaceDao {
 
     @Query("SELECT COUNT(*) FROM offline_search_places")
     suspend fun totalCount(): Int
+
+    @Query("SELECT regionName, COUNT(*) AS placeCount FROM offline_search_places GROUP BY regionName")
+    fun observeRegionCounts(): Flow<List<RegionPlaceCount>>
 }

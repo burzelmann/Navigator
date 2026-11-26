@@ -13,7 +13,10 @@ import com.example.nagivator.domain.model.RouteResult
 import com.example.nagivator.domain.model.RouteStep
 import com.example.nagivator.domain.model.SpeedPreference
 import com.example.nagivator.domain.model.TravelMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.doubleOrNull
@@ -115,43 +118,54 @@ class OfflineRoutingRepository(private val appContext: Context) {
             val tmpFile = File(segmentsDir, "$segmentFileName.tmp")
             if (tmpFile.exists()) tmpFile.delete()
 
-            downloadClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    throw IllegalStateException("BRouter Segment Download fehlgeschlagen (HTTP ${resp.code()})")
-                }
-                val body = resp.body() ?: throw IllegalStateException("Leere Antwort von brouter.de")
-                val totalBytes = body.contentLength()
-                var downloaded = 0L
-                var lastReportMs = 0L
-
-                body.byteStream().use { input ->
-                    FileOutputStream(tmpFile).use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            output.write(buffer, 0, read)
-                            downloaded += read
-                            val now = System.currentTimeMillis()
-                            if (now - lastReportMs >= 200L || (totalBytes > 0 && downloaded >= totalBytes)) {
-                                lastReportMs = now
-                                onProgress(downloaded, totalBytes)
-                            }
-                        }
-                        output.flush()
+            val call = downloadClient.newCall(req)
+            try {
+                call.execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw IllegalStateException("BRouter Segment Download fehlgeschlagen (HTTP ${resp.code()})")
                     }
+                    val body = resp.body() ?: throw IllegalStateException("Leere Antwort von brouter.de")
+                    val totalBytes = body.contentLength()
+                    var downloaded = 0L
+                    var lastReportMs = 0L
+
+                    body.byteStream().use { input ->
+                        FileOutputStream(tmpFile).use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                output.write(buffer, 0, read)
+                                downloaded += read
+                                val now = System.currentTimeMillis()
+                                if (now - lastReportMs >= 200L || (totalBytes > 0 && downloaded >= totalBytes)) {
+                                    lastReportMs = now
+                                    onProgress(downloaded, totalBytes)
+                                }
+                            }
+                            output.flush()
+                        }
+                    }
+                    if (downloaded < 1024L) {
+                        tmpFile.delete()
+                        throw IllegalStateException("Heruntergeladene Routing-Kachel ist ungültig ($downloaded Bytes)")
+                    }
+                    if (targetFile.exists()) targetFile.delete()
+                    if (!tmpFile.renameTo(targetFile)) {
+                        tmpFile.copyTo(targetFile, overwrite = true)
+                        tmpFile.delete()
+                    }
+                    Log.i(TAG, "Downloaded BRouter segment $segmentFileName (${downloaded / (1024 * 1024)} MB)")
+                    OfflineRoutingSegmentInfo(segmentFileName, targetFile.length())
                 }
-                if (downloaded < 1024L) {
-                    tmpFile.delete()
-                    throw IllegalStateException("Heruntergeladene Routing-Kachel ist ungültig ($downloaded Bytes)")
-                }
-                if (targetFile.exists()) targetFile.delete()
-                if (!tmpFile.renameTo(targetFile)) {
-                    tmpFile.copyTo(targetFile, overwrite = true)
-                    tmpFile.delete()
-                }
-                Log.i(TAG, "Downloaded BRouter segment $segmentFileName (${downloaded / (1024 * 1024)} MB)")
-                OfflineRoutingSegmentInfo(segmentFileName, targetFile.length())
+            } catch (ce: CancellationException) {
+                call.cancel()
+                if (tmpFile.exists()) tmpFile.delete()
+                throw ce
+            } catch (e: Throwable) {
+                if (tmpFile.exists()) tmpFile.delete()
+                throw e
             }
         }
     }

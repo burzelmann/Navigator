@@ -65,6 +65,10 @@ import com.example.nagivator.domain.model.SpeedPreference
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel = viewModel(),
+    offlineRegionCount: Int = 0,
+    offlineRoutingCount: Int = 0,
+    offlineTotalMB: Double = 0.0,
+    onOpenOfflineManager: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -612,6 +616,50 @@ fun ProfileScreen(
                     ) {
                         Text("Alle gelernten Strecken löschen")
                     }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Offline-Karten & Routing Einstiegskarte
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Offline-Karten & Routing",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "$offlineRegionCount Regionen • $offlineRoutingCount Routing-Kacheln • %.1f MB".format(offlineTotalMB),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onOpenOfflineManager,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Offline-Inhalte verwalten")
                 }
             }
         }

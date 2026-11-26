@@ -665,258 +665,31 @@ fun MapScreen(
             )
         }
 
-        // 7. Offline Map Storage & Management Dialog
-        if (showOfflineManagerDialog || uiState.downloadStatusMessage != null) {
-            AlertDialog(
-                onDismissRequest = {
-                    if (!uiState.isDownloadingOfflineMap) {
-                        showOfflineManagerDialog = false
-                        viewModel.dismissOfflineDownloadStatus()
-                    }
-                },
-                icon = {
-                    Icon(
-                        Icons.Default.CloudDownload,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
-                title = { Text("Offline-Karten & Speicher", style = MaterialTheme.typography.titleLarge) },
-                text = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "Belegter Karten-Speicher:",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = uiState.offlineCacheSizeMB,
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-
-                        if (uiState.downloadStatusMessage != null) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = uiState.downloadStatusMessage!!,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (uiState.downloadEstimatedTimeRemaining != null) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = uiState.downloadEstimatedTimeRemaining!!,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (uiState.isDownloadingOfflineMap) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                LinearProgressIndicator(
-                                    progress = {
-                                        if (uiState.downloadTotalTiles > 0) {
-                                            (uiState.downloadProgress.toFloat() / uiState.downloadTotalTiles.toFloat()).coerceIn(0f, 1f)
-                                        } else 0f
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-
-                        if (!uiState.isDownloadingOfflineMap) {
-                            if (allOfflineRegions.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    text = "Gespeicherte Regionen (${allOfflineRegions.size}):",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 160.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(allOfflineRegions) { region ->
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            ListItem(
-                                                headlineContent = {
-                                                    Text(region.name, style = MaterialTheme.typography.titleMedium)
-                                                },
-                                                supportingContent = {
-                                                    val dateStr = SimpleDateFormat("dd. MMM", Locale.GERMANY).format(Date(region.downloadedAt))
-                                                    Text("%.1f MB • ${region.tileCount} Kacheln • $dateStr".format(region.sizeMB), style = MaterialTheme.typography.bodySmall)
-                                                },
-                                                trailingContent = {
-                                                    Row {
-                                                        IconButton(onClick = {
-                                                            mapController?.let { controller ->
-                                                                viewModel.updateOfflineRegion(context, controller, region)
-                                                            }
-                                                        }) {
-                                                            Icon(Icons.Default.Refresh, contentDescription = "Aktualisieren", tint = MaterialTheme.colorScheme.primary)
-                                                        }
-                                                        IconButton(onClick = {
-                                                            viewModel.deleteOfflineRegion(context, mapController, region)
-                                                        }) {
-                                                            Icon(Icons.Default.Delete, contentDescription = "Löschen", tint = MaterialTheme.colorScheme.error)
-                                                        }
-                                                    }
-                                                },
-                                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-                            val currentRoutingTile = viewModel.getCurrentAreaRoutingSegmentName(mapController)
-                            val isCurrentTileInstalled = uiState.installedRoutingSegments.any { it.fileName == currentRoutingTile }
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(
-                                        text = "Offline-Routing (BRouter)",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    if (uiState.installedRoutingSegments.isNotEmpty()) {
-                                        uiState.installedRoutingSegments.forEach { seg ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text(
-                                                    text = "${seg.fileName} • %.1f MB".format(seg.sizeMB),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
-                                                IconButton(
-                                                    onClick = { viewModel.deleteOfflineRoutingSegment(seg.fileName) }
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Delete,
-                                                        contentDescription = "Routing-Kachel löschen",
-                                                        tint = MaterialTheme.colorScheme.error
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        Text(
-                                            text = "Für straßengenaues Offline-Routing (Auto & Fuß) die 5°×5°-Kachel $currentRoutingTile laden.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
-                                        )
-                                    }
-                                    uiState.routingDownloadStatus?.let { rStatus ->
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = rStatus,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                    if (uiState.isDownloadingRoutingSegment) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        LinearProgressIndicator(
-                                            progress = { uiState.routingDownloadProgress },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    } else if (!isCurrentTileInstalled) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        OutlinedButton(
-                                            onClick = { viewModel.downloadOfflineRoutingForCurrentArea(mapController) },
-                                            shape = RoundedCornerShape(12.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Icon(Icons.Default.CloudDownload, contentDescription = null)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Routing-Daten laden ($currentRoutingTile)")
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = {
-                                    mapController?.let { controller ->
-                                        viewModel.startOfflineMapDownload(context, controller)
-                                    }
-                                },
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.CloudDownload, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Ausschnitt herunterladen")
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.clearOfflineTileCache(context, mapController)
-                                },
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Karten-Cache leeren")
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    if (!uiState.isDownloadingOfflineMap) {
-                        TextButton(
-                            onClick = {
-                                showOfflineManagerDialog = false
-                                viewModel.dismissOfflineDownloadStatus()
-                            }
-                        ) {
-                            Text("Schließen", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(28.dp),
-                containerColor = MaterialTheme.colorScheme.surface
+        // 7. Full-Screen Offline Center (Regions + Search Index + BRouter Routing Catalog)
+        if (showOfflineManagerDialog) {
+            com.example.nagivator.ui.offline.OfflineManagerScreen(
+                viewModel = viewModel,
+                mapController = mapController,
+                onBack = {
+                    showOfflineManagerDialog = false
+                    viewModel.dismissOfflineDownloadStatus()
+                }
             )
         }
 
         // 8. Pre-Download Confirmation & Size Estimate Dialog
         uiState.pendingDownloadEstimate?.let { estimate ->
+            var alsoDownloadRouting by remember(estimate) { mutableStateOf(false) }
+            val centerLat = (estimate.minLat + estimate.maxLat) / 2.0
+            val centerLon = (estimate.minLon + estimate.maxLon) / 2.0
+            val routingTileFile = remember(estimate) {
+                com.example.nagivator.data.repository.OfflineRoutingRepository.segmentNameFor(centerLat, centerLon)
+            }
+            val routingTileDesc = remember(routingTileFile) {
+                com.example.nagivator.data.repository.OfflineRoutingCatalog.describeSegment(routingTileFile)
+            }
+            val isRoutingAlreadyInstalled = uiState.installedRoutingSegments.any { it.fileName == routingTileFile }
+
             LaunchedEffect(estimate) {
                 regionNameInput = estimate.suggestedName
             }
@@ -938,7 +711,7 @@ fun MapScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Der gewählte Bildschirmausschnitt wird für alle tieferen Zoomstufen offline gespeichert.",
+                            text = "Der gewählte Bildschirmausschnitt wird inkl. lokalem Offline-Suchindex gespeichert.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -956,13 +729,43 @@ fun MapScreen(
                                 Text("Zoomstufen: ${estimate.minZoom} bis ${estimate.maxZoom}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                             }
                         }
+                        if (!isRoutingAlreadyInstalled) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { alsoDownloadRouting = !alsoDownloadRouting },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = alsoDownloadRouting,
+                                    onCheckedChange = { alsoDownloadRouting = it }
+                                )
+                                Column(modifier = Modifier.padding(start = 4.dp)) {
+                                    Text(
+                                        text = "Offline-Routing mitladen (${routingTileDesc.title})",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "$routingTileFile • ca. 100–185 MB (WLAN empfohlen)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 },
                 confirmButton = {
                     Button(
                         onClick = {
                             mapController?.let { controller ->
-                                viewModel.confirmOfflineMapDownload(context, controller, regionNameInput)
+                                viewModel.confirmOfflineMapDownload(
+                                    context = context,
+                                    controller = controller,
+                                    customRegionName = regionNameInput,
+                                    alsoDownloadRoutingTile = alsoDownloadRouting
+                                )
                             }
                         },
                         shape = RoundedCornerShape(16.dp)

@@ -1,3 +1,3 @@
-• Echtes On-Device Offline-Routing (BRouter): Straßengenaue Routenberechnung und Off-Route-Neuberechnung (Auto & Fuß) inklusive deutscher Turn-by-Turn-Anweisungen und Kreisverkehre komplett ohne Internet.
-• Neuer Bereich „Offline-Routing (BRouter)“ im Offline-Karten-Manager zum 1-Tap-Download der passenden 5°×5°-Routing-Kachel (z. B. E5_N50.rd5 für NRW/Niederrhein) mit Live-Fortschritt und Löschfunktion.
-• Automatischer Offline-Fallback auf Smartphone & Android Auto vor der Notfall-Luftlinie.
+• Neues Vollbild-Offline-Center (erreichbar über Karte & Profil): Gemeinsame Speicher-Übersicht (Karten, Routing, Suchindex, Cache) und zwei klare Tabs für Regionen & Routing-Karten.
+• Gebündelter Status pro Region: Zeigt direkt Karte, Anzahl lokaler Offline-Ziele (inkl. 1-Tap-Nachindizierung) und Offline-Routing-Abdeckung.
+• BRouter-Katalog mit Klartext-Namen (DACH, Benelux & Urlaubsregionen), abbrechbarem Download-Fortschritt, optionalem Kombi-Download und Mobilfunk-Warnhinweis.

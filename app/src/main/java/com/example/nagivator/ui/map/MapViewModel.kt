@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -99,8 +100,10 @@ data class MapUiState(
     // Offline Routing (BRouter .rd5 segments)
     val installedRoutingSegments: List<com.example.nagivator.data.repository.OfflineRoutingSegmentInfo> = emptyList(),
     val isDownloadingRoutingSegment: Boolean = false,
+    val downloadingRoutingSegmentName: String? = null,
     val routingDownloadProgress: Float = 0f,
-    val routingDownloadStatus: String? = null
+    val routingDownloadStatus: String? = null,
+    val rebuildingSearchIndexRegion: String? = null
 )
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
@@ -123,6 +126,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    val offlineSearchCountsByRegion: StateFlow<Map<String, Int>> =
+        db.offlineSearchPlaceDao().observeRegionCounts()
+            .map { rows -> rows.associate { it.regionName to it.placeCount } }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyMap()
+            )
 
     private val _uiState = MutableStateFlow(
         MapUiState(currentLocation = locationRepository.getLastSavedLocation())
@@ -1044,7 +1056,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(pendingDownloadEstimate = null) }
     }
 
-    fun confirmOfflineMapDownload(context: Context, controller: MapLibreController?, customRegionName: String = "") {
+    fun confirmOfflineMapDownload(
+        context: Context,
+        controller: MapLibreController?,
+        customRegionName: String = "",
+        alsoDownloadRoutingTile: Boolean = false
+    ) {
         val estimate = _uiState.value.pendingDownloadEstimate ?: return
         val regionName = customRegionName.ifBlank { estimate.suggestedName }
 
@@ -1134,6 +1151,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                             it.copy(
                                                 downloadStatusMessage = "Vektor-Region '$regionName' gespeichert (%.1f MB) • $indexedCount Offline-Ziele indiziert!".format(actualMb)
                                             )
+                                        }
+                                    }
+                                    if (alsoDownloadRoutingTile) {
+                                        val centerLat = (estimate.minLat + estimate.maxLat) / 2.0
+                                        val centerLon = (estimate.minLon + estimate.maxLon) / 2.0
+                                        val seg = com.example.nagivator.data.repository.OfflineRoutingRepository
+                                            .segmentNameFor(centerLat, centerLon)
+                                        if (!offlineRoutingRepository.hasSegment(seg)) {
+                                            downloadOfflineRoutingSegment(seg)
                                         }
                                     }
                                 }
@@ -1299,54 +1325,121 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         return com.example.nagivator.data.repository.OfflineRoutingRepository.segmentNameFor(lat, lon)
     }
 
+    private var routingDownloadJob: Job? = null
+
     fun downloadOfflineRoutingForCurrentArea(controller: MapLibreController?) {
-        if (_uiState.value.isDownloadingRoutingSegment) return
         val segmentName = getCurrentAreaRoutingSegmentName(controller)
-        viewModelScope.launch {
+        downloadOfflineRoutingSegment(segmentName)
+    }
+
+    fun downloadOfflineRoutingSegment(segmentName: String) {
+        if (_uiState.value.isDownloadingRoutingSegment) return
+        val label = com.example.nagivator.data.repository.OfflineRoutingCatalog.describeSegment(segmentName).title
+        routingDownloadJob?.cancel()
+        routingDownloadJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isDownloadingRoutingSegment = true,
+                    downloadingRoutingSegmentName = segmentName,
                     routingDownloadProgress = 0f,
-                    routingDownloadStatus = "Lade Routing-Kachel $segmentName..."
+                    routingDownloadStatus = "Lade $label ($segmentName)..."
                 )
             }
-            val result = offlineRoutingRepository.downloadSegment(segmentName) { downloaded, total ->
-                val dlMb = downloaded / (1024.0 * 1024.0)
-                val totMb = if (total > 0) total / (1024.0 * 1024.0) else 0.0
-                val frac = if (total > 0) (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
-                val status = if (totMb > 0) {
-                    "Lade $segmentName: %.1f / %.1f MB".format(dlMb, totMb)
-                } else {
-                    "Lade $segmentName: %.1f MB".format(dlMb)
+            try {
+                val result = offlineRoutingRepository.downloadSegment(segmentName) { downloaded, total ->
+                    val dlMb = downloaded / (1024.0 * 1024.0)
+                    val totMb = if (total > 0) total / (1024.0 * 1024.0) else 0.0
+                    val frac = if (total > 0) (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+                    val status = if (totMb > 0) {
+                        "%.1f / %.1f MB".format(dlMb, totMb)
+                    } else {
+                        "%.1f MB".format(dlMb)
+                    }
+                    _uiState.update {
+                        it.copy(
+                            routingDownloadProgress = frac,
+                            routingDownloadStatus = status
+                        )
+                    }
                 }
-                _uiState.update {
-                    it.copy(
-                        routingDownloadProgress = frac,
-                        routingDownloadStatus = status
-                    )
+                val segments = offlineRoutingRepository.listInstalledSegments()
+                result.onSuccess { info ->
+                    _uiState.update {
+                        it.copy(
+                            isDownloadingRoutingSegment = false,
+                            downloadingRoutingSegmentName = null,
+                            routingDownloadProgress = 1f,
+                            installedRoutingSegments = segments,
+                            routingDownloadStatus = "$label bereit (%.1f MB)!".format(info.sizeMB)
+                        )
+                    }
+                }.onFailure { err ->
+                    if (err is kotlinx.coroutines.CancellationException) throw err
+                    _uiState.update {
+                        it.copy(
+                            isDownloadingRoutingSegment = false,
+                            downloadingRoutingSegmentName = null,
+                            routingDownloadProgress = 0f,
+                            installedRoutingSegments = segments,
+                            routingDownloadStatus = "Fehler: ${err.message ?: "Download fehlgeschlagen"}"
+                        )
+                    }
                 }
-            }
-            val segments = offlineRoutingRepository.listInstalledSegments()
-            result.onSuccess { info ->
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                val segments = offlineRoutingRepository.listInstalledSegments()
                 _uiState.update {
                     it.copy(
                         isDownloadingRoutingSegment = false,
-                        routingDownloadProgress = 1f,
-                        installedRoutingSegments = segments,
-                        routingDownloadStatus = "Offline-Routing $segmentName bereit (%.1f MB)!".format(info.sizeMB)
-                    )
-                }
-            }.onFailure { err ->
-                _uiState.update {
-                    it.copy(
-                        isDownloadingRoutingSegment = false,
+                        downloadingRoutingSegmentName = null,
                         routingDownloadProgress = 0f,
                         installedRoutingSegments = segments,
-                        routingDownloadStatus = "Fehler: ${err.message ?: "Download fehlgeschlagen"}"
+                        routingDownloadStatus = "Download abgebrochen."
                     )
                 }
             }
         }
+    }
+
+    fun cancelOfflineRoutingDownload() {
+        routingDownloadJob?.cancel()
+        routingDownloadJob = null
+    }
+
+    fun rebuildSearchIndexForRegion(region: OfflineRegionEntity) {
+        if (_uiState.value.rebuildingSearchIndexRegion != null) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    rebuildingSearchIndexRegion = region.name,
+                    downloadStatusMessage = "Indiziere Offline-Ziele für '${region.name}'..."
+                )
+            }
+            val count = runCatching {
+                offlineSearchIndexRepository.buildIndexForRegion(
+                    regionName = region.name,
+                    minLat = region.minLat,
+                    maxLat = region.maxLat,
+                    minLon = region.minLon,
+                    maxLon = region.maxLon
+                )
+            }.getOrDefault(0)
+            _uiState.update {
+                it.copy(
+                    rebuildingSearchIndexRegion = null,
+                    downloadStatusMessage = if (count > 0) {
+                        "$count Offline-Ziele für '${region.name}' gespeichert!"
+                    } else {
+                        "Suchindex für '${region.name}' konnte nicht geladen werden (kein Netz?)."
+                    }
+                )
+            }
+        }
+    }
+
+    fun focusMapOnRegion(controller: MapLibreController?, region: OfflineRegionEntity) {
+        val centerLat = (region.minLat + region.maxLat) / 2.0
+        val centerLon = (region.minLon + region.maxLon) / 2.0
+        controller?.animateTo(centerLat, centerLon, zoom = region.minZoom.toDouble().coerceIn(9.0, 14.0))
     }
 
     fun deleteOfflineRoutingSegment(fileName: String) {

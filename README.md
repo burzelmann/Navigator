@@ -46,14 +46,11 @@
   - Exakte Auswertung von Gesamtaufstieg und Gesamtabstieg (`↗ 120m  ↘ 85m`).
   - Interaktives, kompaktes Höhenprofil-Diagramm im Routenplaner.
 
-- 📥 **Umfassendes Offline-Kartenmanagement:**
-  - **Regionen-Download:** Gezielter Kachel-Download für sichtbare Ausschnitte über alle tieferen Zoomstufen ($Z_{aktuell} \dots 18$).
-  - **Datengrößen-Schätzung:** Anzeige von Kachelanzahl und geschätzter MB-Größe vor dem Download.
-  - **Gleitendes 10s-ETA:** Live-Restzeitanzeige basierend auf der Download-Geschwindigkeit der letzten 10 Sekunden.
-  - **Automatische Regionen-Benennung:** Ortsnamenerkennung per Reverse-Geocoding.
-  - **Lokaler Offline-Suchindex (`OfflineSearchIndexRepository`):** Lädt beim Regionen-Download automatisch Orte, benannte Straßen und wichtige POIs (Tankstellen, Supermärkte, Apotheken, Bahnhöfe, Parkplätze) in Room/SQLite — ermöglicht blitzschnelle Offline-Suche auf Smartphone & Android Auto auch im Funkloch.
-  - **Echtes On-Device Offline-Routing (`OfflineRoutingRepository` + BRouter):** Straßengenaue Routenberechnung und Off-Route-Neuberechnung (Auto `car-fast` & Fuß `hiking-mountain`) inklusive deutscher Turn-by-Turn-Anweisungen und Kreisverkehr-Ausfahrten direkt auf dem Gerät über 5°×5°-BRouter-Kacheln (`.rd5`), ladbar direkt im Offline-Karten-Manager.
-  - **Verwaltungsmenü:** Einzelne Regionen gezielt aktualisieren oder löschen (inkl. automatischer Bereinigung des Suchindex).
+- 📥 **Umfassendes Offline-Center (`OfflineManagerScreen`):**
+  - **Zentrales Vollbild-Offline-Center:** Erreichbar direkt über die Karte **und** über den **Profil-Tab**, mit gemeinsamer Speicher-Übersicht (*Karten + Routing + Suchindex + Cache*) und zwei klaren Tabs (*Regionen* & *Routing*).
+  - **Regionen-Download & gebündelter Status:** Gezielter Kachel-Download für sichtbare Ausschnitte inkl. Datengrößen-Schätzung, 10s-ETA, automatischer Regionen-Benennung und 3 Live-Status-Badges pro Region (*Karte bereit*, *Offline-Ziele im Suchindex*, *Offline-Routing bereit/fehlt*).
+  - **Lokaler Offline-Suchindex (`OfflineSearchIndexRepository`):** Lädt beim Regionen-Download (oder 1-Tap-Nachindizierung) automatisch Orte, benannte Straßen und wichtige POIs in Room/SQLite — blitzschnelle Offline-Suche auf Smartphone & Android Auto.
+  - **Echtes On-Device Offline-Routing (`OfflineRoutingRepository` + BRouter-Katalog):** Straßengenaue Routenberechnung und Off-Route-Neuberechnung (Auto & Fuß) direkt auf dem Gerät über 5°×5°-Kacheln (`.rd5`). Inklusive Klartext-Katalog (*Deutschland & Nachbarn*, *Beliebte Urlaubsregionen* + automatische weltweite Erkennung), Live-Download-Fortschritt mit Abbrechen-Option und Mobilfunk-Warnhinweis.
 
 - ❤️ **Favoriten, Fahrtenverlauf & Parkplatz-Merker:**
   - 100% offline gespeicherte Lieblingsorte, Favoriten-Routen und **Fahrtenverlauf (`TripHistoryEntity`)** in der lokalen Room-Datenbank (mit **Nochmal starten** & **Rückweg starten**).

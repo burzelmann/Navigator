@@ -69,6 +69,18 @@ class MapLibreController(val map: MapLibreMap) {
     fun visibleBounds(): LatLngBounds = map.projection.visibleRegion.latLngBounds
 
     fun currentZoom(): Double = map.cameraPosition.zoom
+
+    fun animateTo(lat: Double, lon: Double, zoom: Double = 12.0) {
+        map.animateCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder()
+                    .target(LatLng(lat, lon))
+                    .zoom(zoom)
+                    .build()
+            ),
+            450
+        )
+    }
 }
 
 private const val SRC_ALT_ROUTES = "nagivator-alt-routes-src"
