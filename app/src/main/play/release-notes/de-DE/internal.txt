@@ -1,3 +1,3 @@
-• Offline-Zielsuche für heruntergeladene Kartenregionen (Smartphone & Android Auto): Beim Karten-Download wird automatisch ein kompakter Suchindex (Orte, Straßen, Tankstellen, Ladestationen, Apotheken, Supermärkte, Bahnhöfe) lokal gespeichert.
-• Automatischer Offline-Fallback: Ohne Internet durchsucht die App sofort Favoriten, Verlauf und heruntergeladene Regionen.
-• Ausfallsicherer Index-Download über Overpass API mit Photon-BBox-Fallback.
+• Echtes On-Device Offline-Routing (BRouter): Straßengenaue Routenberechnung und Off-Route-Neuberechnung (Auto & Fuß) inklusive deutscher Turn-by-Turn-Anweisungen und Kreisverkehre komplett ohne Internet.
+• Neuer Bereich „Offline-Routing (BRouter)“ im Offline-Karten-Manager zum 1-Tap-Download der passenden 5°×5°-Routing-Kachel (z. B. E5_N50.rd5 für NRW/Niederrhein) mit Live-Fortschritt und Löschfunktion.
+• Automatischer Offline-Fallback auf Smartphone & Android Auto vor der Notfall-Luftlinie.

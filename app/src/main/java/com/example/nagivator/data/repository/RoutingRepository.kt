@@ -98,32 +98,41 @@ class RoutingRepository {
                 throw IllegalArgumentException("Mindestens 2 Wegpunkte erforderlich")
             }
 
-            // 1. For FOOT mode, try BRouter Hiking engine first
-            if (mode == TravelMode.FOOT) {
-                val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
-                if (brouterResult != null && brouterResult.geometryPoints.size >= 2) {
-                    return@runCatching brouterResult
+            if (!debugSimulateOfflineRouting) {
+                // 1. For FOOT mode, try BRouter Hiking engine first
+                if (mode == TravelMode.FOOT) {
+                    val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
+                    if (brouterResult != null && brouterResult.geometryPoints.size >= 2) {
+                        return@runCatching brouterResult
+                    }
+                }
+
+                // 2. Try OSRM engine
+                try {
+                    val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
+                    val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+
+                    val response = routingApi.getRoute(
+                        profile = osrmProfile,
+                        coordinates = coordsStr
+                    )
+                    val firstRoute = response.routes.firstOrNull()
+                    if (firstRoute != null) {
+                        return@runCatching parseOsrmRoute(firstRoute, waypoints, mode, footSpeedPref, carSpeedPref)
+                    }
+                } catch (_: Exception) {
+                    // proceed to offline routing engine
                 }
             }
 
-            // 2. Try OSRM engine
-            try {
-                val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
-                val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
-
-                val response = routingApi.getRoute(
-                    profile = osrmProfile,
-                    coordinates = coordsStr
-                )
-                val firstRoute = response.routes.firstOrNull()
-                if (firstRoute != null) {
-                    return@runCatching parseOsrmRoute(firstRoute, waypoints, mode, footSpeedPref, carSpeedPref)
-                }
-            } catch (_: Exception) {
-                // proceed to fallback
+            // 3. True on-device offline routing (BRouter .rd5 tiles)
+            val offlineRoute = OfflineRoutingRepository.instanceOrNull()
+                ?.computeOfflineRoute(waypoints, mode, footSpeedPref, carSpeedPref)
+            if (offlineRoute != null && offlineRoute.geometryPoints.size >= 2) {
+                return@runCatching offlineRoute
             }
 
-            // 3. Fail-safe Geodesic fallback
+            // 4. Last-resort Geodesic straight-line fallback
             getGeodesicFallbackRoute(waypoints, mode, footSpeedPref, carSpeedPref)
         }
     }
@@ -147,37 +156,39 @@ class RoutingRepository {
 
             val results = mutableListOf<RouteResult>()
 
-            // 1. For FOOT mode, prefer BRouter outdoor trail route as primary
-            if (mode == TravelMode.FOOT) {
-                val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
-                if (brouterResult != null && brouterResult.geometryPoints.size >= 2) {
-                    results.add(brouterResult)
+            if (!debugSimulateOfflineRouting) {
+                // 1. For FOOT mode, prefer BRouter outdoor trail route as primary
+                if (mode == TravelMode.FOOT) {
+                    val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
+                    if (brouterResult != null && brouterResult.geometryPoints.size >= 2) {
+                        results.add(brouterResult)
+                    }
                 }
-            }
 
-            // 2. Query OSRM with alternatives=true
-            try {
-                val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
-                val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
-                val response = routingApi.getRoute(
-                    profile = osrmProfile,
-                    coordinates = coordsStr,
-                    alternatives = true
-                )
-                val parsed = response.routes.map {
-                    parseOsrmRoute(it, waypoints, mode, footSpeedPref, carSpeedPref)
-                }
-                for (candidate in parsed) {
-                    val isDuplicate = results.any { existing ->
-                        kotlin.math.abs(existing.totalDistanceMeters - candidate.totalDistanceMeters) < 120.0 &&
-                            kotlin.math.abs(existing.totalDurationSeconds - candidate.totalDurationSeconds) < 30.0
+                // 2. Query OSRM with alternatives=true
+                try {
+                    val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
+                    val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+                    val response = routingApi.getRoute(
+                        profile = osrmProfile,
+                        coordinates = coordsStr,
+                        alternatives = true
+                    )
+                    val parsed = response.routes.map {
+                        parseOsrmRoute(it, waypoints, mode, footSpeedPref, carSpeedPref)
                     }
-                    if (!isDuplicate) {
-                        results.add(candidate)
+                    for (candidate in parsed) {
+                        val isDuplicate = results.any { existing ->
+                            kotlin.math.abs(existing.totalDistanceMeters - candidate.totalDistanceMeters) < 120.0 &&
+                                kotlin.math.abs(existing.totalDurationSeconds - candidate.totalDurationSeconds) < 30.0
+                        }
+                        if (!isDuplicate) {
+                            results.add(candidate)
+                        }
                     }
+                } catch (_: Exception) {
+                    // proceed to offline fallback if empty
                 }
-            } catch (_: Exception) {
-                // proceed to fallback if empty
             }
 
             // 3. Optional learned CAR preference (only when opt-in & confirmed >= 3x)
@@ -223,7 +234,13 @@ class RoutingRepository {
             }
 
             if (results.isEmpty() && preferredRoute == null) {
-                results.add(getGeodesicFallbackRoute(waypoints, mode, footSpeedPref, carSpeedPref))
+                val offlineRoute = OfflineRoutingRepository.instanceOrNull()
+                    ?.computeOfflineRoute(waypoints, mode, footSpeedPref, carSpeedPref)
+                if (offlineRoute != null && offlineRoute.geometryPoints.size >= 2) {
+                    results.add(offlineRoute)
+                } else {
+                    results.add(getGeodesicFallbackRoute(waypoints, mode, footSpeedPref, carSpeedPref))
+                }
             }
 
             val sortedStandard = results.sortedBy { it.totalDurationSeconds }
@@ -394,6 +411,9 @@ class RoutingRepository {
 
         @Volatile
         var debugSimulateOfflineSearch: Boolean = false
+
+        @Volatile
+        var debugSimulateOfflineRouting: Boolean = false
 
         fun isPlausibleLearnedRoute(
             learnedDistanceMeters: Double,

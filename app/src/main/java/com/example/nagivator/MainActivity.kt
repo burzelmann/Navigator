@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nagivator.data.repository.AppThemeMode
+import com.example.nagivator.data.repository.OfflineRoutingRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.ui.favorites.FavoritesScreen
 import com.example.nagivator.ui.map.MapScreen
@@ -39,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OfflineRoutingRepository.init(applicationContext)
 
         enableEdgeToEdge()
         setContent {

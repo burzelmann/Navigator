@@ -790,7 +790,81 @@ fun MapScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(20.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            val currentRoutingTile = viewModel.getCurrentAreaRoutingSegmentName(mapController)
+                            val isCurrentTileInstalled = uiState.installedRoutingSegments.any { it.fileName == currentRoutingTile }
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Offline-Routing (BRouter)",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    if (uiState.installedRoutingSegments.isNotEmpty()) {
+                                        uiState.installedRoutingSegments.forEach { seg ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = "${seg.fileName} • %.1f MB".format(seg.sizeMB),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                                IconButton(
+                                                    onClick = { viewModel.deleteOfflineRoutingSegment(seg.fileName) }
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Delete,
+                                                        contentDescription = "Routing-Kachel löschen",
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "Für straßengenaues Offline-Routing (Auto & Fuß) die 5°×5°-Kachel $currentRoutingTile laden.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    uiState.routingDownloadStatus?.let { rStatus ->
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = rStatus,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    if (uiState.isDownloadingRoutingSegment) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        LinearProgressIndicator(
+                                            progress = { uiState.routingDownloadProgress },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else if (!isCurrentTileInstalled) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        OutlinedButton(
+                                            onClick = { viewModel.downloadOfflineRoutingForCurrentArea(mapController) },
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(Icons.Default.CloudDownload, contentDescription = null)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Routing-Daten laden ($currentRoutingTile)")
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = {
                                     mapController?.let { controller ->

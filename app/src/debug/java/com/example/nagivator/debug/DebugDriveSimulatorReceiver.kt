@@ -65,8 +65,34 @@ class DebugDriveSimulatorReceiver : BroadcastReceiver() {
                     RoutingRepository.debugSimulateOfflineSearch = true
                     Log.i(TAG, "OFFLINE_INDEX_READY count=$count")
                 }
+                "offline_routing_test" -> {
+                    val offlineRepo = com.example.nagivator.data.repository.OfflineRoutingRepository.getInstance(context)
+                    if (!offlineRepo.hasSegment("E5_N50.rd5")) {
+                        Log.i(TAG, "OFFLINE_ROUTING_DOWNLOAD_START E5_N50.rd5")
+                        offlineRepo.downloadSegment("E5_N50.rd5")
+                    }
+                    RoutingRepository.debugSimulateOfflineRouting = true
+                    val start = LocationPoint(51.7732232, 6.2923022, "Scholtenweg 15, Kalkar")
+                    val dest = LocationPoint(51.4661307, 6.4675776, "Im Bergwinkel 9, Rheurdt")
+                    val route = RoutingRepository().getRoute(listOf(start, dest), TravelMode.CAR).getOrNull()
+                    if (route != null) {
+                        NavigationStateHolder.setSimulatedLocationActive(true)
+                        NavigationStateHolder.updateLocation(start)
+                        NavigationStateHolder.startNavigation(route)
+                        Log.i(
+                            TAG,
+                            "OFFLINE_ROUTING_READY fallback=${route.isOfflineFallback} " +
+                                "pts=${route.geometryPoints.size} steps=${route.steps.size} " +
+                                "distKm=${"%.1f".format(route.totalDistanceMeters / 1000.0)} " +
+                                "durMin=${"%.0f".format(route.totalDurationSeconds / 60.0)}"
+                        )
+                    } else {
+                        Log.e(TAG, "OFFLINE_ROUTING_FAILED")
+                    }
+                }
                 "stop" -> {
                     RoutingRepository.debugSimulateOfflineSearch = false
+                    RoutingRepository.debugSimulateOfflineRouting = false
                     NavigationStateHolder.setSimulatedLocationActive(false)
                     NavigationStateHolder.stopNavigation()
                 }

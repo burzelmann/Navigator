@@ -26,7 +26,7 @@ android {
         applicationId = "com.verhuelsdonk.navigator"
         minSdk = 37
         targetSdk = 37
-        versionCode = 24
+        versionCode = 25
         versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -96,6 +96,7 @@ dependencies {
     // Location & Mapping
     implementation(libs.play.services.location)
     implementation(libs.maplibre.android)
+    implementation(files("libs/brouter-1.7.10-ro.jar"))
 
     // Android Auto
     implementation(libs.androidx.car.app)

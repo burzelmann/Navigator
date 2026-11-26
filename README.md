@@ -52,6 +52,7 @@
   - **Gleitendes 10s-ETA:** Live-Restzeitanzeige basierend auf der Download-Geschwindigkeit der letzten 10 Sekunden.
   - **Automatische Regionen-Benennung:** Ortsnamenerkennung per Reverse-Geocoding.
   - **Lokaler Offline-Suchindex (`OfflineSearchIndexRepository`):** Lädt beim Regionen-Download automatisch Orte, benannte Straßen und wichtige POIs (Tankstellen, Supermärkte, Apotheken, Bahnhöfe, Parkplätze) in Room/SQLite — ermöglicht blitzschnelle Offline-Suche auf Smartphone & Android Auto auch im Funkloch.
+  - **Echtes On-Device Offline-Routing (`OfflineRoutingRepository` + BRouter):** Straßengenaue Routenberechnung und Off-Route-Neuberechnung (Auto `car-fast` & Fuß `hiking-mountain`) inklusive deutscher Turn-by-Turn-Anweisungen und Kreisverkehr-Ausfahrten direkt auf dem Gerät über 5°×5°-BRouter-Kacheln (`.rd5`), ladbar direkt im Offline-Karten-Manager.
   - **Verwaltungsmenü:** Einzelne Regionen gezielt aktualisieren oder löschen (inkl. automatischer Bereinigung des Suchindex).
 
 - ❤️ **Favoriten, Fahrtenverlauf & Parkplatz-Merker:**

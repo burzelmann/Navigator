@@ -94,7 +94,13 @@ data class MapUiState(
     val downloadStatusMessage: String? = null,
     val downloadEstimatedTimeRemaining: String? = null,
     val offlineCacheSizeMB: String = "0 MB",
-    val pendingDownloadEstimate: DownloadEstimate? = null
+    val pendingDownloadEstimate: DownloadEstimate? = null,
+
+    // Offline Routing (BRouter .rd5 segments)
+    val installedRoutingSegments: List<com.example.nagivator.data.repository.OfflineRoutingSegmentInfo> = emptyList(),
+    val isDownloadingRoutingSegment: Boolean = false,
+    val routingDownloadProgress: Float = 0f,
+    val routingDownloadStatus: String? = null
 )
 
 class MapViewModel(application: Application) : AndroidViewModel(application) {
@@ -207,6 +213,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val phoneDeviationTracker = com.example.nagivator.domain.RouteDeviationTracker()
     private val learnedRouteRepository = LearnedRouteRepository.getInstance(application)
     private val offlineSearchIndexRepository = OfflineSearchIndexRepository.getInstance(application)
+    private val offlineRoutingRepository = com.example.nagivator.data.repository.OfflineRoutingRepository.getInstance(application)
     private val voiceGuidance = CarVoiceGuidance.getInstance(application)
 
     private fun checkNavigationProgress(currentLoc: LocationPoint) {
@@ -1266,8 +1273,92 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     "%.1f MB".format(sizeBytes / (1024.0 * 1024.0))
                 }
-                _uiState.update { it.copy(offlineCacheSizeMB = sizeFormatted) }
+                val segments = offlineRoutingRepository.listInstalledSegments()
+                _uiState.update {
+                    it.copy(
+                        offlineCacheSizeMB = sizeFormatted,
+                        installedRoutingSegments = segments
+                    )
+                }
             } catch (_: Exception) {}
+        }
+    }
+
+    fun getCurrentAreaRoutingSegmentName(controller: MapLibreController?): String {
+        val bounds = runCatching { controller?.visibleBounds() }.getOrNull()
+        val lat = if (bounds != null) {
+            (bounds.latitudeNorth + bounds.latitudeSouth) / 2.0
+        } else {
+            _uiState.value.currentLocation?.latitude ?: 51.7375
+        }
+        val lon = if (bounds != null) {
+            (bounds.longitudeEast + bounds.longitudeWest) / 2.0
+        } else {
+            _uiState.value.currentLocation?.longitude ?: 6.2920
+        }
+        return com.example.nagivator.data.repository.OfflineRoutingRepository.segmentNameFor(lat, lon)
+    }
+
+    fun downloadOfflineRoutingForCurrentArea(controller: MapLibreController?) {
+        if (_uiState.value.isDownloadingRoutingSegment) return
+        val segmentName = getCurrentAreaRoutingSegmentName(controller)
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingRoutingSegment = true,
+                    routingDownloadProgress = 0f,
+                    routingDownloadStatus = "Lade Routing-Kachel $segmentName..."
+                )
+            }
+            val result = offlineRoutingRepository.downloadSegment(segmentName) { downloaded, total ->
+                val dlMb = downloaded / (1024.0 * 1024.0)
+                val totMb = if (total > 0) total / (1024.0 * 1024.0) else 0.0
+                val frac = if (total > 0) (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+                val status = if (totMb > 0) {
+                    "Lade $segmentName: %.1f / %.1f MB".format(dlMb, totMb)
+                } else {
+                    "Lade $segmentName: %.1f MB".format(dlMb)
+                }
+                _uiState.update {
+                    it.copy(
+                        routingDownloadProgress = frac,
+                        routingDownloadStatus = status
+                    )
+                }
+            }
+            val segments = offlineRoutingRepository.listInstalledSegments()
+            result.onSuccess { info ->
+                _uiState.update {
+                    it.copy(
+                        isDownloadingRoutingSegment = false,
+                        routingDownloadProgress = 1f,
+                        installedRoutingSegments = segments,
+                        routingDownloadStatus = "Offline-Routing $segmentName bereit (%.1f MB)!".format(info.sizeMB)
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isDownloadingRoutingSegment = false,
+                        routingDownloadProgress = 0f,
+                        installedRoutingSegments = segments,
+                        routingDownloadStatus = "Fehler: ${err.message ?: "Download fehlgeschlagen"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteOfflineRoutingSegment(fileName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            offlineRoutingRepository.deleteSegment(fileName)
+            val segments = offlineRoutingRepository.listInstalledSegments()
+            _uiState.update {
+                it.copy(
+                    installedRoutingSegments = segments,
+                    routingDownloadStatus = "Routing-Kachel $fileName gelöscht."
+                )
+            }
         }
     }
 
