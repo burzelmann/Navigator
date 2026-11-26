@@ -26,6 +26,7 @@ import com.example.nagivator.data.local.entity.PoiEntity
 import com.example.nagivator.data.local.entity.SavedRouteEntity
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.example.nagivator.data.repository.LearnedRouteRepository
 import com.example.nagivator.data.repository.LocationRepository
 import com.example.nagivator.data.repository.OrientationRepository
 import com.example.nagivator.data.repository.PoiRepository
@@ -202,6 +203,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     
     private var isRecalculatingOffRoute = false
     private val phoneGuidanceEngine = com.example.nagivator.domain.TurnGuidanceEngine()
+    private val phoneDeviationTracker = com.example.nagivator.domain.RouteDeviationTracker()
+    private val learnedRouteRepository = LearnedRouteRepository.getInstance(application)
     private val voiceGuidance = CarVoiceGuidance.getInstance(application)
 
     private fun checkNavigationProgress(currentLoc: LocationPoint) {
@@ -211,6 +214,28 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val route = state.activeRoute
         val steps = route.steps
         val currentIndex = state.currentRouteStepIndex
+
+        if (state.travelMode == TravelMode.CAR &&
+            userSettingsRepository.settings.value.learnPreferredRoutes &&
+            !NavigationStateHolder.isCarNavigationActive
+        ) {
+            phoneDeviationTracker.recordLocation(currentLoc)
+            val destLoc = steps.lastOrNull()?.maneuverLocation ?: route.geometryPoints.lastOrNull()
+            if (destLoc != null) {
+                val destDist = CarNavigationHelper.haversineMeters(
+                    currentLoc.latitude, currentLoc.longitude,
+                    destLoc.latitude, destLoc.longitude
+                )
+                if (destDist < 40.0) {
+                    phoneDeviationTracker.evaluateAtArrival()?.let { outcome ->
+                        phoneDeviationTracker.reset()
+                        viewModelScope.launch {
+                            runCatching { learnedRouteRepository.recordTripOutcome(outcome) }
+                        }
+                    }
+                }
+            }
+        }
 
         // 1. Check distance to current route geometry (Off-Route Detection & Trailing Polyline Trimming)
         if (route.geometryPoints.isNotEmpty()) {
@@ -497,7 +522,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isCalculatingRoute = true, routeError = null, travelMode = mode) }
             val footPref = userSettingsRepository.settings.value.footSpeed
             val carPref = userSettingsRepository.settings.value.carSpeed
-            val result = routingRepository.getRouteAlternatives(listOf(start, destination), mode, footPref, carPref)
+            val learnedPref = if (mode == TravelMode.CAR && userSettingsRepository.settings.value.learnPreferredRoutes) {
+                learnedRouteRepository.findActivePreference(start, destination, TravelMode.CAR)
+            } else null
+            val result = routingRepository.getRouteAlternatives(
+                waypoints = listOf(start, destination),
+                mode = mode,
+                footSpeedPref = footPref,
+                carSpeedPref = carPref,
+                learnedPreference = learnedPref
+            )
             result.onSuccess { routes ->
                 _uiState.update {
                     it.copy(
@@ -816,6 +850,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             newRoute
                         }
                         NavigationStateHolder.startNavigation(finalRoute)
+                        if (finalRoute.mode == TravelMode.CAR && userSettingsRepository.settings.value.learnPreferredRoutes) {
+                            phoneDeviationTracker.startTrip(finalRoute)
+                        } else {
+                            phoneDeviationTracker.reset()
+                        }
                         recordRouteToHistory(finalRoute)
                         _uiState.update {
                             it.copy(

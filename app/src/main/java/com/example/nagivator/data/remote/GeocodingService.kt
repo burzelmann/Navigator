@@ -31,6 +31,36 @@ data class PhotonResponse(
     val features: List<PhotonFeature> = emptyList()
 )
 
+@Serializable
+data class NominatimAddress(
+    val road: String? = null,
+    val house_number: String? = null,
+    val city: String? = null,
+    val town: String? = null,
+    val village: String? = null,
+    val municipality: String? = null,
+    val country: String? = null
+)
+
+@Serializable
+data class NominatimPlace(
+    val lat: String = "",
+    val lon: String = "",
+    val name: String? = null,
+    val display_name: String = "",
+    val address: NominatimAddress? = null
+)
+
+interface NominatimApi {
+    @GET("search")
+    suspend fun searchPlaces(
+        @Query("q") query: String,
+        @Query("format") format: String = "json",
+        @Query("addressdetails") addressDetails: Int = 1,
+        @Query("limit") limit: Int = 10
+    ): List<NominatimPlace>
+}
+
 interface GeocodingApi {
     @GET("api/")
     suspend fun searchPlaces(

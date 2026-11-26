@@ -28,6 +28,12 @@ class TrafficRepository {
     }
 
     private val client = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val req = chain.request().newBuilder()
+                .header("User-Agent", "Nagivator/1.0 (Android App; com.verhuelsdonk.navigator)")
+                .build()
+            chain.proceed(req)
+        }
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()

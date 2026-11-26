@@ -3,8 +3,10 @@ package com.example.nagivator.data.repository
 import android.location.Location
 import android.util.Log
 import com.example.nagivator.car.CarNavigationHelper
+import com.example.nagivator.data.local.entity.LearnedRouteEntity
 import com.example.nagivator.data.remote.BRouterApi
 import com.example.nagivator.data.remote.GeocodingApi
+import com.example.nagivator.data.remote.NominatimApi
 import com.example.nagivator.data.remote.OsrmRoute
 import com.example.nagivator.data.remote.RoutingApi
 import com.example.nagivator.domain.model.GermanManeuverTranslator
@@ -35,6 +37,13 @@ class RoutingRepository {
 
     private val mediaType = MediaType.get("application/json")
     private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val req = chain.request().newBuilder()
+                .header("User-Agent", APP_USER_AGENT)
+                .header("Accept-Language", "de-DE,de;q=0.9")
+                .build()
+            chain.proceed(req)
+        }
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .writeTimeout(5, TimeUnit.SECONDS)
@@ -67,6 +76,15 @@ class RoutingRepository {
             .addConverterFactory(json.asConverterFactory(mediaType))
             .build()
             .create(GeocodingApi::class.java)
+    }
+
+    private val nominatimApi: NominatimApi by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://nominatim.openstreetmap.org/")
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(mediaType))
+            .build()
+            .create(NominatimApi::class.java)
     }
 
     suspend fun getRoute(
@@ -119,7 +137,8 @@ class RoutingRepository {
         mode: TravelMode,
         footSpeedPref: SpeedPreference = SpeedPreference.NORMAL,
         carSpeedPref: SpeedPreference = SpeedPreference.NORMAL,
-        maxRoutes: Int = 3
+        maxRoutes: Int = 3,
+        learnedPreference: LearnedRouteEntity? = null
     ): Result<List<RouteResult>> = withContext(Dispatchers.IO) {
         runCatching {
             if (waypoints.size < 2) {
@@ -161,13 +180,62 @@ class RoutingRepository {
                 // proceed to fallback if empty
             }
 
-            if (results.isEmpty()) {
+            // 3. Optional learned CAR preference (only when opt-in & confirmed >= 3x)
+            var preferredRoute: RouteResult? = null
+            if (mode == TravelMode.CAR && learnedPreference != null && waypoints.size == 2) {
+                try {
+                    val viaWaypoints = buildList {
+                        add(waypoints.first())
+                        add(LocationPoint(learnedPreference.anchorLatitude, learnedPreference.anchorLongitude, "Bevorzugter Korridor"))
+                        if (learnedPreference.anchor2Latitude != null && learnedPreference.anchor2Longitude != null) {
+                            add(LocationPoint(learnedPreference.anchor2Latitude, learnedPreference.anchor2Longitude, "Bevorzugter Korridor 2"))
+                        }
+                        add(waypoints.last())
+                    }
+                    val viaCoords = viaWaypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+                    val viaResp = routingApi.getRoute(
+                        profile = "driving",
+                        coordinates = viaCoords,
+                        alternatives = false,
+                        continueStraight = true
+                    )
+                    val viaOsrm = viaResp.routes.firstOrNull()
+                    if (viaOsrm != null) {
+                        val parsedPref = parseOsrmRoute(
+                            viaOsrm,
+                            waypoints,
+                            TravelMode.CAR,
+                            footSpeedPref,
+                            carSpeedPref
+                        ).copy(
+                            isLearnedPreference = true,
+                            learnedRouteId = learnedPreference.id
+                        )
+                        val fastestStdDist = results.minOfOrNull { it.totalDistanceMeters } ?: parsedPref.totalDistanceMeters
+                        // Plausibility guard: reject learned route if > 45% longer than fastest standard route
+                        if (isPlausibleLearnedRoute(parsedPref.totalDistanceMeters, fastestStdDist)) {
+                            preferredRoute = parsedPref
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Fall back silently to standard routes
+                }
+            }
+
+            if (results.isEmpty() && preferredRoute == null) {
                 results.add(getGeodesicFallbackRoute(waypoints, mode, footSpeedPref, carSpeedPref))
             }
 
-            results
-                .sortedBy { it.totalDurationSeconds }
-                .take(maxRoutes.coerceAtLeast(1))
+            val sortedStandard = results.sortedBy { it.totalDurationSeconds }
+            if (preferredRoute != null) {
+                val filteredStandard = sortedStandard.filterNot { std ->
+                    kotlin.math.abs(std.totalDistanceMeters - preferredRoute.totalDistanceMeters) < 120.0 &&
+                        kotlin.math.abs(std.totalDurationSeconds - preferredRoute.totalDurationSeconds) < 30.0
+                }
+                (listOf(preferredRoute) + filteredStandard).take(maxRoutes.coerceAtLeast(1))
+            } else {
+                sortedStandard.take(maxRoutes.coerceAtLeast(1))
+            }
         }
     }
 
@@ -322,6 +390,16 @@ class RoutingRepository {
     }
 
     companion object {
+        private const val APP_USER_AGENT = "Nagivator/1.0 (Android App; com.verhuelsdonk.navigator)"
+
+        fun isPlausibleLearnedRoute(
+            learnedDistanceMeters: Double,
+            fastestStandardDistanceMeters: Double
+        ): Boolean {
+            if (fastestStandardDistanceMeters <= 0.0) return true
+            return learnedDistanceMeters <= fastestStandardDistanceMeters * 1.45
+        }
+
         fun selectRouteAvoidingPoint(
             candidates: List<RouteResult>,
             blockedPoint: LocationPoint,
@@ -500,29 +578,68 @@ class RoutingRepository {
     ): Result<List<LocationPoint>> = withContext(Dispatchers.IO) {
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
-            val response = geocodingApi.searchPlaces(
+
+            // 1. Primary: Photon (fast, location-biased)
+            val photonPlaces = try {
+                val response = geocodingApi.searchPlaces(
+                    query = query,
+                    limit = limit,
+                    lat = biasLat,
+                    lon = biasLon
+                )
+                response.features.mapNotNull { feature ->
+                    val coords = feature.geometry.coordinates
+                    if (coords.size >= 2) {
+                        val nameStr = feature.properties.name ?: feature.properties.city ?: query
+                        val addrParts = listOfNotNull(
+                            feature.properties.street,
+                            feature.properties.housenumber,
+                            feature.properties.city,
+                            feature.properties.country
+                        )
+                        LocationPoint(
+                            latitude = coords[1],
+                            longitude = coords[0],
+                            name = nameStr,
+                            address = addrParts.joinToString(", ")
+                        )
+                    } else null
+                }
+            } catch (e: Exception) {
+                Log.w("NagivatorSearch", "Photon search failed for '$query': ${e.javaClass.simpleName}: ${e.message}")
+                null
+            }
+
+            if (!photonPlaces.isNullOrEmpty()) {
+                return@runCatching photonPlaces
+            }
+
+            // 2. Fallback: OpenStreetMap Nominatim (if Photon blocked/failed or returned empty)
+            val nomResponse = nominatimApi.searchPlaces(
                 query = query,
-                limit = limit,
-                lat = biasLat,
-                lon = biasLon
+                limit = limit
             )
-            response.features.mapNotNull { feature ->
-                val coords = feature.geometry.coordinates
-                if (coords.size >= 2) {
-                    val nameStr = feature.properties.name ?: feature.properties.city ?: query
-                    val addrParts = listOfNotNull(
-                        feature.properties.street,
-                        feature.properties.housenumber,
-                        feature.properties.city,
-                        feature.properties.country
-                    )
-                    LocationPoint(
-                        latitude = coords[1],
-                        longitude = coords[0],
-                        name = nameStr,
-                        address = addrParts.joinToString(", ")
-                    )
-                } else null
+            nomResponse.mapNotNull { item ->
+                val lat = item.lat.toDoubleOrNull() ?: return@mapNotNull null
+                val lon = item.lon.toDoubleOrNull() ?: return@mapNotNull null
+                val addr = item.address
+                val city = addr?.city ?: addr?.town ?: addr?.village ?: addr?.municipality
+                val nameStr = item.name?.takeIf { it.isNotBlank() }
+                    ?: addr?.road?.let { r -> "${r} ${addr.house_number.orEmpty()}".trim() }
+                    ?: city
+                    ?: item.display_name.substringBefore(",").trim().ifBlank { query }
+                val addrParts = listOfNotNull(
+                    addr?.road,
+                    addr?.house_number,
+                    city,
+                    addr?.country
+                )
+                LocationPoint(
+                    latitude = lat,
+                    longitude = lon,
+                    name = nameStr,
+                    address = addrParts.joinToString(", ").ifBlank { item.display_name }
+                )
             }
         }
     }

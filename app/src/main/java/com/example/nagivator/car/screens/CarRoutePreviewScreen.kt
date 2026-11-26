@@ -81,7 +81,8 @@ class CarRoutePreviewScreen(
             val routeMinutes = (route.totalDurationSeconds / 60.0).roundToInt().coerceAtLeast(1)
             val deltaMin = routeMinutes - fastestMinutes
             val badge = when {
-                idx == 0 -> "Schnellste Route"
+                route.isLearnedPreference -> if (deltaMin > 0) "⭐ Bevorzugte Route (+$deltaMin Min.)" else "⭐ Bevorzugte Route"
+                deltaMin == 0 -> "Schnellste Route"
                 deltaMin > 0 -> "+$deltaMin Min. • Alternative ${idx + 1}"
                 else -> "Alternative ${idx + 1}"
             }

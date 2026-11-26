@@ -1,4 +1,3 @@
-Neu in v22 (aus 1:1-Echtzeit-Testfahrten optimiert):
-• Fahrspurassistent & Spurhinweise gegen Abbiegerichtung plausibilisiert (keine veralteten Spuren mehr bei Richtungs- oder Namenswechsel)
-• Kreisverkehr-Ausfahrtszahl (1, 2, 3, ...) jetzt direkt im Android-Auto-Icon sichtbar; überflüssige 'Kreisverkehr verlassen'-Ansagen & Sub-Banner entfernt
-• Natürliche deutsche Präpositionen bei Straßennamen mit 'Am / Im / An / Zur / Zum' (z. B. 'in die Straße Am Lindchen')
+Neu in v23:
+• Zielsuche behoben: Sauberer App-User-Agent für Photon (behebt HTTP-403-Sperre) + automatischer OpenStreetMap-Nominatim-Fallback; Android-Auto-Tastatur verdeckt Trefferliste nicht mehr
+• Persönliches Strecken-Lernen (Opt-in im Profil, nur Auto-Modus): Merkt sich lokal auf dem Gerät ab 3× bewusster Abweichung bevorzugte Strecken und schlägt sie künftig als '⭐ Bevorzugte Route' vor (einzeln oder komplett löschbar)

@@ -213,9 +213,14 @@ class CarDestinationsScreen(
         invalidate()
 
         lifecycleScope.launch {
+            val learnedPref = if (com.example.nagivator.data.repository.UserSettingsRepository.getInstance(carContext).settings.value.learnPreferredRoutes) {
+                com.example.nagivator.data.repository.LearnedRouteRepository.getInstance(carContext)
+                    .findActivePreference(startLoc, destination, TravelMode.CAR)
+            } else null
             val result = routingRepository.getRouteAlternatives(
                 waypoints = listOf(startLoc, destination),
-                mode = TravelMode.CAR
+                mode = TravelMode.CAR,
+                learnedPreference = learnedPref
             )
 
             result.onSuccess { routes ->

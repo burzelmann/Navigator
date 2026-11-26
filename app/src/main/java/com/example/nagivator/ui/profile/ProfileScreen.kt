@@ -21,13 +21,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -64,6 +68,7 @@ fun ProfileScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsState()
+    val learnedRoutes by viewModel.learnedRoutes.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val voiceGuidance = remember { CarVoiceGuidance.getInstance(context) }
@@ -506,6 +511,106 @@ fun ProfileScreen(
                         ) {
                             Text(pref.label)
                         }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // On-Device Route Preference Learning Card (Car only, opt-in)
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f).padding(end = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Route,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Bevorzugte Strecken lernen (Auto)",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Merkt sich rein lokal auf dem Gerät, wenn du auf einer Auto-Strecke mindestens 3× bewusst anders fährst.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = settings.learnPreferredRoutes,
+                        onCheckedChange = { viewModel.setLearnPreferredRoutes(it) }
+                    )
+                }
+
+                if (learnedRoutes.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Gelernte Auto-Strecken (${learnedRoutes.size})",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    learnedRoutes.forEach { item ->
+                        val isActive = item.confirmationCount >= com.example.nagivator.data.repository.LearnedRouteRepository.CONFIRMATION_THRESHOLD
+                        val statusLabel = if (isActive) {
+                            "⭐ Aktiv (${item.confirmationCount}× bestätigt)"
+                        } else {
+                            "Lernend (${item.confirmationCount}/${com.example.nagivator.data.repository.LearnedRouteRepository.CONFIRMATION_THRESHOLD})"
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = "${item.startName} → ${item.destinationName}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = statusLabel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = { viewModel.deleteLearnedRoute(item.id) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Gelernte Strecke löschen",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.deleteAllLearnedRoutes() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Alle gelernten Strecken löschen")
                     }
                 }
             }

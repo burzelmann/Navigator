@@ -31,7 +31,9 @@ data class RouteResult(
     val totalAscentMeters: Double = 0.0,
     val totalDescentMeters: Double = 0.0,
     val elevationPoints: List<Pair<Double, Double>> = emptyList(), // Pair<DistanceMeters, AltitudeMeters>
-    val isOfflineFallback: Boolean = false
+    val isOfflineFallback: Boolean = false,
+    val isLearnedPreference: Boolean = false,
+    val learnedRouteId: Long? = null
 ) {
     val formattedDistance: String
         get() = if (totalDistanceMeters >= 1000) {

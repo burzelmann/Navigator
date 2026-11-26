@@ -6,11 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.nagivator.data.local.dao.LearnedRouteDao
 import com.example.nagivator.data.local.dao.OfflineRegionDao
 import com.example.nagivator.data.local.dao.PoiDao
 import com.example.nagivator.data.local.dao.SavedRouteDao
 import com.example.nagivator.data.local.dao.TripHistoryDao
 import com.example.nagivator.data.local.entity.CategoryEntity
+import com.example.nagivator.data.local.entity.LearnedRouteEntity
 import com.example.nagivator.data.local.entity.OfflineRegionEntity
 import com.example.nagivator.data.local.entity.PoiEntity
 import com.example.nagivator.data.local.entity.SavedRouteEntity
@@ -22,9 +24,10 @@ import com.example.nagivator.data.local.entity.TripHistoryEntity
         CategoryEntity::class,
         SavedRouteEntity::class,
         OfflineRegionEntity::class,
-        TripHistoryEntity::class
+        TripHistoryEntity::class,
+        LearnedRouteEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class NagivatorDatabase : RoomDatabase() {
@@ -32,6 +35,7 @@ abstract class NagivatorDatabase : RoomDatabase() {
     abstract fun savedRouteDao(): SavedRouteDao
     abstract fun offlineRegionDao(): OfflineRegionDao
     abstract fun tripHistoryDao(): TripHistoryDao
+    abstract fun learnedRouteDao(): LearnedRouteDao
 
     companion object {
         @Volatile
@@ -59,6 +63,31 @@ abstract class NagivatorDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `learned_routes` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `startName` TEXT NOT NULL,
+                        `startLatitude` REAL NOT NULL,
+                        `startLongitude` REAL NOT NULL,
+                        `destinationName` TEXT NOT NULL,
+                        `destinationLatitude` REAL NOT NULL,
+                        `destinationLongitude` REAL NOT NULL,
+                        `travelMode` TEXT NOT NULL,
+                        `anchorLatitude` REAL NOT NULL,
+                        `anchorLongitude` REAL NOT NULL,
+                        `anchor2Latitude` REAL,
+                        `anchor2Longitude` REAL,
+                        `confirmationCount` INTEGER NOT NULL,
+                        `lastUsedMs` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): NagivatorDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -66,7 +95,7 @@ abstract class NagivatorDatabase : RoomDatabase() {
                     NagivatorDatabase::class.java,
                     "nagivator_database"
                 )
-                .addMigrations(MIGRATION_6_7)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance

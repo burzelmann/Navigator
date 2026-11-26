@@ -372,10 +372,10 @@ fun RouteCard(
                 ) {
                     alternativeRoutes.forEachIndexed { idx, alt ->
                         val isSelected = alt == route
-                        val label = if (idx == 0) {
-                            "Schnellste • ${alt.formattedDuration}"
-                        } else {
-                            "Route ${idx + 1} • ${alt.formattedDuration}"
+                        val label = when {
+                            alt.isLearnedPreference -> "⭐ Bevorzugt • ${alt.formattedDuration}"
+                            idx == 0 -> "Schnellste • ${alt.formattedDuration}"
+                            else -> "Route ${idx + 1} • ${alt.formattedDuration}"
                         }
                         FilterChip(
                             selected = isSelected,

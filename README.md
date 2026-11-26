@@ -56,6 +56,7 @@
 - ❤️ **Favoriten, Fahrtenverlauf & Parkplatz-Merker:**
   - 100% offline gespeicherte Lieblingsorte, Favoriten-Routen und **Fahrtenverlauf (`TripHistoryEntity`)** in der lokalen Room-Datenbank (mit **Nochmal starten** & **Rückweg starten**).
   - **On-Device Ziel-Vorschläge (`RoutePredictionUseCase`):** Lernt wiederkehrende Ziele nach Startort, Tageszeitfenster und Wochentag komplett lokal ohne Cloud oder Tracking.
+  - **Persönliches Strecken-Lernen (Opt-in, nur Auto):** Wenn im Profil freigegeben, merkt sich Nagivator rein lokal in der Room-Datenbank, wenn auf einer konkreten Start→Ziel-Autostrecke mindestens **3×** bewusst anders gefahren wird, und schlägt diese Route künftig als **„⭐ Bevorzugte Route“** neben der Standard-OSRM-Route vor (einzeln oder komplett löschbar).
   - **Parkplatz automatisch merken:** Beim Beenden einer Autofahrt wird die letzte GPS-Position automatisch als blauer `P`-Pin auf der Karte gespeichert – mit Ein-Klick-Fußweg-Navigation **„Zum Auto zurück (Fußweg)“**.
   - Schnellsuchleiste im Favoriten-Tab mit Echtzeit-Filterung.
 

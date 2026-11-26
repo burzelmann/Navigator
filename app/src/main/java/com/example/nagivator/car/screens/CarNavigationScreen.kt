@@ -25,10 +25,12 @@ import com.example.nagivator.car.CarNavigationHelper
 import com.example.nagivator.car.CarVoiceGuidance
 import com.example.nagivator.car.surface.CarMapSurfaceRenderer
 import com.example.nagivator.car.surface.MapPerspective
+import com.example.nagivator.data.repository.LearnedRouteRepository
 import com.example.nagivator.data.repository.RoutingRepository
 import com.example.nagivator.data.repository.TrafficRepository
 import com.example.nagivator.data.repository.UserSettingsRepository
 import com.example.nagivator.domain.NavigationStateHolder
+import com.example.nagivator.domain.RouteDeviationTracker
 import com.example.nagivator.domain.TurnGuidanceEngine
 import com.example.nagivator.domain.model.LocationPoint
 import com.example.nagivator.domain.model.RouteResult
@@ -51,6 +53,8 @@ class CarNavigationScreen(
     private val voiceGuidance = CarVoiceGuidance.getInstance(carContext)
     private val routingRepository = RoutingRepository()
     private val trafficRepository = TrafficRepository()
+    private val learnedRouteRepository = LearnedRouteRepository.getInstance(carContext)
+    private val deviationTracker = RouteDeviationTracker()
 
     private var locationJob: Job? = null
     private var trafficJob: Job? = null
@@ -77,10 +81,15 @@ class CarNavigationScreen(
         // Sync initial route with surface renderer and skip initial "depart" step if a turn follows
         val initialRoute = NavigationStateHolder.activeRoute.value
         surfaceRenderer.updateRoute(initialRoute)
-        if (initialRoute != null && NavigationStateHolder.currentStepIndex.value == 0) {
-            val startIdx = CarNavigationHelper.initialStepIndex(initialRoute.steps)
-            if (startIdx != 0) {
-                NavigationStateHolder.updateStepIndex(startIdx)
+        if (initialRoute != null) {
+            if (UserSettingsRepository.getInstance(carContext).settings.value.learnPreferredRoutes) {
+                deviationTracker.startTrip(initialRoute)
+            }
+            if (NavigationStateHolder.currentStepIndex.value == 0) {
+                val startIdx = CarNavigationHelper.initialStepIndex(initialRoute.steps)
+                if (startIdx != 0) {
+                    NavigationStateHolder.updateStepIndex(startIdx)
+                }
             }
         }
 
@@ -164,6 +173,7 @@ class CarNavigationScreen(
             ?: return
 
         val alertMsg = "Sperrung auf ${closure.roadId} voraus. Berechne Ausweichroute."
+        deviationTracker.markForcedClosureReroute()
         voiceGuidance.speak(alertMsg)
         CarToast.makeText(carContext, alertMsg, CarToast.LENGTH_LONG).show()
 
@@ -194,6 +204,9 @@ class CarNavigationScreen(
         val currentIndex = NavigationStateHolder.currentStepIndex.value
 
         surfaceRenderer.updateLocation(loc)
+        if (UserSettingsRepository.getInstance(carContext).settings.value.learnPreferredRoutes) {
+            deviationTracker.recordLocation(loc)
+        }
 
         // 1. Off-Route Detection (segment-based + 3-strike hysteresis) & Trailing Polyline Trimming
         if (route.geometryPoints.isNotEmpty() && !hasArrived) {
@@ -230,6 +243,13 @@ class CarNavigationScreen(
             )
             if (destResults[0] < ARRIVAL_THRESHOLD_METERS) {
                 hasArrived = true
+                if (UserSettingsRepository.getInstance(carContext).settings.value.learnPreferredRoutes) {
+                    deviationTracker.evaluateAtArrival()?.let { outcome ->
+                        lifecycleScope.launch {
+                            runCatching { learnedRouteRepository.recordTripOutcome(outcome) }
+                        }
+                    }
+                }
                 voiceGuidance.speak("Sie haben Ihr Ziel erreicht")
                 CarToast.makeText(carContext, "Ziel erreicht!", CarToast.LENGTH_LONG).show()
                 lifecycleScope.launch {

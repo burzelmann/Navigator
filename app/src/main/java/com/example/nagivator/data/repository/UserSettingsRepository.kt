@@ -47,6 +47,7 @@ data class UserSettings(
     val voiceMuted: Boolean = false,
     val voiceName: String? = null,
     val voiceSpeechRate: VoiceSpeechRate = VoiceSpeechRate.NORMAL,
+    val learnPreferredRoutes: Boolean = false,
     val parkedCar: ParkedCarLocation? = null
 )
 
@@ -78,6 +79,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val voiceMuted = prefs.getBoolean("voice_muted", false)
         val voiceName = prefs.getString("voice_name", null)?.takeIf { it.isNotBlank() }
         val voiceRateName = prefs.getString("voice_speech_rate", VoiceSpeechRate.NORMAL.name)
+        val learnPreferredRoutes = prefs.getBoolean("learn_preferred_routes", false)
         val parkedCar = if (prefs.contains("parked_car_lat") && prefs.contains("parked_car_lon")) {
             ParkedCarLocation(
                 latitude = prefs.getFloat("parked_car_lat", 0f).toDouble(),
@@ -134,6 +136,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             voiceMuted = voiceMuted,
             voiceName = voiceName,
             voiceSpeechRate = voiceRate,
+            learnPreferredRoutes = learnPreferredRoutes,
             parkedCar = parkedCar
         )
     }
@@ -190,6 +193,11 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     fun setVoiceSpeechRate(rate: VoiceSpeechRate) {
         prefs.edit().putString("voice_speech_rate", rate.name).apply()
         _settings.update { it.copy(voiceSpeechRate = rate) }
+    }
+
+    fun setLearnPreferredRoutes(enabled: Boolean) {
+        prefs.edit().putBoolean("learn_preferred_routes", enabled).apply()
+        _settings.update { it.copy(learnPreferredRoutes = enabled) }
     }
 
     fun saveParkedCar(
