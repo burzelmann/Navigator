@@ -29,7 +29,9 @@ data class TrafficIncident(
     val description: String = "",
     val latitude: Double,
     val longitude: Double,
-    val isBlocked: Boolean = false
+    val isBlocked: Boolean = false,
+    val delaySeconds: Int? = null,
+    val source: String = "Autobahn"
 )
 
 data class RoadContextSnapshot(

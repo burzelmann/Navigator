@@ -53,6 +53,14 @@ class DebugDriveSimulatorReceiver : BroadcastReceiver() {
                     LocationPoint(51.7732232, 6.2923022, "Scholtenweg 15, Kalkar"),
                     LocationPoint(51.4661307, 6.4675776, "Im Bergwinkel 9, Rheurdt")
                 )
+                "kalkar_uedem_gl_realtime" -> runRealTimeWaypoints(
+                    context,
+                    listOf(
+                        LocationPoint(51.7732232, 6.2923022, "Scholtenweg 15, Kalkar"),
+                        LocationPoint(51.6736008, 6.2727354, "An der Bockmühle 17, Uedem"),
+                        LocationPoint(50.9658446, 7.2109708, "Ehrenfeld 9, Bergisch Gladbach")
+                    )
+                )
                 "index_kalkar_offline_test" -> {
                     val repo = OfflineSearchIndexRepository.getInstance(context)
                     val count = repo.buildIndexForRegion(
@@ -88,6 +96,49 @@ class DebugDriveSimulatorReceiver : BroadcastReceiver() {
                         )
                     } else {
                         Log.e(TAG, "OFFLINE_ROUTING_FAILED")
+                    }
+                }
+                "traffic_nrw_test" -> {
+                    // Live Verkehr.NRW + Autobahn traffic verification on a real NRW route (Duisburg -> Dortmund)
+                    val start = LocationPoint(51.4344, 6.7623, "Duisburg")
+                    val dest = LocationPoint(51.5136, 7.4653, "Dortmund")
+                    val route = RoutingRepository().getRoute(listOf(start, dest), TravelMode.CAR).getOrNull()
+                    if (route != null) {
+                        val incidents = com.example.nagivator.data.repository.TrafficRepository().fetchIncidentsOnRoute(route)
+                        NavigationStateHolder.setSimulatedLocationActive(true)
+                        NavigationStateHolder.updateLocation(start)
+                        NavigationStateHolder.startNavigation(route)
+                        NavigationStateHolder.updateTrafficIncidents(incidents)
+                        val nrwCount = incidents.count { it.source == "Verkehr.NRW" }
+                        val abCount = incidents.count { it.source == "Autobahn" }
+                        Log.i(
+                            TAG,
+                            "TRAFFIC_NRW_READY total=${incidents.size} nrw=$nrwCount autobahn=$abCount " +
+                                "sample=${incidents.take(3).joinToString(" | ") { "${it.source}:${it.type}:${it.title}(${it.roadId})" }}"
+                        )
+                    } else {
+                        Log.e(TAG, "TRAFFIC_NRW_FAILED route=null")
+                    }
+                }
+                "traffic_ndw_test" -> {
+                    // Live NDW Netherlands traffic verification on a real cross-border/Dutch route (Nijmegen -> Rotterdam)
+                    val start = LocationPoint(51.8426, 5.8528, "Nijmegen")
+                    val dest = LocationPoint(51.9244, 4.4777, "Rotterdam")
+                    val route = RoutingRepository().getRoute(listOf(start, dest), TravelMode.CAR).getOrNull()
+                    if (route != null) {
+                        val incidents = com.example.nagivator.data.repository.TrafficRepository().fetchIncidentsOnRoute(route)
+                        NavigationStateHolder.setSimulatedLocationActive(true)
+                        NavigationStateHolder.updateLocation(start)
+                        NavigationStateHolder.startNavigation(route)
+                        NavigationStateHolder.updateTrafficIncidents(incidents)
+                        val ndwCount = incidents.count { it.source == "NDW (NL)" }
+                        Log.i(
+                            TAG,
+                            "TRAFFIC_NDW_READY total=${incidents.size} ndw=$ndwCount " +
+                                "sample=${incidents.take(3).joinToString(" | ") { "${it.source}:${it.type}:${it.title}(${it.roadId})" }}"
+                        )
+                    } else {
+                        Log.e(TAG, "TRAFFIC_NDW_FAILED route=null")
                     }
                 }
                 "stop" -> {
@@ -417,19 +468,28 @@ class DebugDriveSimulatorReceiver : BroadcastReceiver() {
         context: Context,
         start: LocationPoint,
         dest: LocationPoint
+    ) = runRealTimeWaypoints(context, listOf(start, dest))
+
+    private suspend fun runRealTimeWaypoints(
+        context: Context,
+        waypoints: List<LocationPoint>
     ) {
+        if (waypoints.size < 2) return
+        val start = waypoints.first()
+        val dest = waypoints.last()
+        val label = waypoints.joinToString(" -> ") { it.name }
         UserSettingsRepository.getInstance(context).setVoiceMuted(false)
 
         val repo = RoutingRepository()
-        val route = repo.getRoute(listOf(start, dest), TravelMode.CAR).getOrNull()
+        val route = repo.getRoute(waypoints, TravelMode.CAR).getOrNull()
         if (route == null || route.geometryPoints.size < 10) {
-            Log.e(TAG, "SIM_ERROR: Could not fetch real OSRM route ${start.name} -> ${dest.name}")
+            Log.e(TAG, "SIM_ERROR: Could not fetch real OSRM route $label")
             return
         }
 
         Log.i(
             TAG,
-            "SIM_START: ${start.name}->${dest.name} real-time route loaded: ${route.steps.size} steps, " +
+            "SIM_START: $label real-time route loaded: ${route.steps.size} steps, " +
                 "${route.totalDistanceMeters.toInt()}m, est ${(route.totalDurationSeconds / 60.0).toInt()} min"
         )
         route.steps.forEachIndexed { idx, s ->
@@ -518,6 +578,7 @@ class DebugDriveSimulatorReceiver : BroadcastReceiver() {
                     "SIM_TELEMETRY t=${elapsedSec}s driven=${drivenMeters.toInt()}/${totalDist.toInt()}m " +
                         "speed=${(baseSpeedMps * 3.6f).toInt()}km/h navStep=$navStepIdx/${activeRouteNow?.steps?.size ?: 0} " +
                         "distToMan=${distToMan}m limit=${NavigationStateHolder.currentSpeedLimitKmh.value} " +
+                        "traffic=${NavigationStateHolder.activeTrafficIncidents.value.size} " +
                         "instr='${navStep?.instruction.orEmpty()}'"
                 )
             }

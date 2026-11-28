@@ -221,12 +221,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     private var isRecalculatingOffRoute = false
+    private val phoneOffRouteDetector = com.example.nagivator.domain.OffRouteDetector()
     private val phoneGuidanceEngine = com.example.nagivator.domain.TurnGuidanceEngine()
     private val phoneDeviationTracker = com.example.nagivator.domain.RouteDeviationTracker()
     private val learnedRouteRepository = LearnedRouteRepository.getInstance(application)
     private val offlineSearchIndexRepository = OfflineSearchIndexRepository.getInstance(application)
     private val offlineRoutingRepository = com.example.nagivator.data.repository.OfflineRoutingRepository.getInstance(application)
+    private val trafficRepository = com.example.nagivator.data.repository.TrafficRepository()
     private val voiceGuidance = CarVoiceGuidance.getInstance(application)
+    private var phoneTrafficJob: Job? = null
+    private val announcedPhoneTrafficIds = mutableSetOf<String>()
 
     private fun checkNavigationProgress(currentLoc: LocationPoint) {
         val state = _uiState.value
@@ -258,23 +262,22 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // 1. Check distance to current route geometry (Off-Route Detection & Trailing Polyline Trimming)
+        // 1. Fast Off-Route Detection (shared OffRouteDetector) & Trailing Polyline Trimming
         if (route.geometryPoints.isNotEmpty()) {
-            val (minDist, closestIdx) = minDistanceAndIndex(currentLoc, route.geometryPoints)
-            val offRouteThreshold = if (state.travelMode == TravelMode.FOOT) 35f else 50f
-
-            if (minDist > offRouteThreshold && !isRecalculatingOffRoute) {
-                // User has deviated from route -> Trigger automatic recalculation from current live position!
+            val eval = phoneOffRouteDetector.evaluate(currentLoc, route.geometryPoints, state.travelMode)
+            if (eval.shouldReroute && !isRecalculatingOffRoute) {
                 recalculateRouteOffRoute(currentLoc, route)
                 return
-            } else if (closestIdx > 0 && closestIdx < route.geometryPoints.size - 1) {
-                // Trim already driven/walked polyline points behind the user
-                val trimmedPoints = route.geometryPoints.subList(closestIdx, route.geometryPoints.size)
-                if (trimmedPoints.size >= 2 && trimmedPoints.size != route.geometryPoints.size) {
-                    _uiState.update {
-                        it.copy(
-                            activeRoute = route.copy(geometryPoints = trimmedPoints)
-                        )
+            } else if (!eval.isOffRoute) {
+                val closestIdx = eval.closestSegmentIndex
+                if (closestIdx > 0 && closestIdx < route.geometryPoints.size - 1) {
+                    val trimmedPoints = route.geometryPoints.subList(closestIdx, route.geometryPoints.size)
+                    if (trimmedPoints.size >= 2 && trimmedPoints.size != route.geometryPoints.size) {
+                        _uiState.update {
+                            it.copy(
+                                activeRoute = route.copy(geometryPoints = trimmedPoints)
+                            )
+                        }
                     }
                 }
             }
@@ -345,6 +348,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private fun recalculateRouteOffRoute(currentLoc: LocationPoint, currentRoute: RouteResult) {
         if (currentRoute.waypoints.isEmpty()) return
         isRecalculatingOffRoute = true
+        phoneOffRouteDetector.markRecalculateStarted()
+        _uiState.update { it.copy(isCalculatingRoute = true) }
 
         viewModelScope.launch {
             try {
@@ -368,6 +373,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: Exception) {
             } finally {
                 isRecalculatingOffRoute = false
+                _uiState.update { it.copy(isCalculatingRoute = false) }
             }
         }
     }
@@ -895,6 +901,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                 currentRouteStepIndex = 0
                             )
                         }
+                        startPhoneTrafficPolling()
                     }.onFailure {
                         NavigationStateHolder.startNavigation(activeRoute)
                         recordRouteToHistory(activeRoute)
@@ -905,6 +912,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                 currentRouteStepIndex = 0
                             )
                         }
+                        startPhoneTrafficPolling()
                     }
                 }
                 return
@@ -921,6 +929,92 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 isRoutePlanningMode = false,
                 currentRouteStepIndex = 0
             ) 
+        }
+        startPhoneTrafficPolling()
+    }
+
+    private fun startPhoneTrafficPolling() {
+        phoneTrafficJob?.cancel()
+        announcedPhoneTrafficIds.clear()
+        phoneTrafficJob = viewModelScope.launch {
+            while (true) {
+                val state = _uiState.value
+                val route = state.activeRoute
+                if (!state.isNavigating || route == null) break
+                // Only poll on phone when CAR mode and Android Auto isn't already polling
+                if (route.mode == TravelMode.CAR && !NavigationStateHolder.isCarNavigationActive) {
+                    val incidents = runCatching { trafficRepository.fetchIncidentsOnRoute(route) }.getOrNull()
+                    if (incidents != null) {
+                        NavigationStateHolder.updateTrafficIncidents(incidents)
+                        val firstClosure = incidents.firstOrNull {
+                            (it.type == com.example.nagivator.domain.model.TrafficIncidentType.CLOSURE || it.isBlocked) &&
+                                announcedPhoneTrafficIds.add(it.id)
+                        }
+                        if (firstClosure != null) {
+                            handlePhoneClosureReroute(firstClosure, route)
+                        } else {
+                            val newWarnings = incidents.filter { announcedPhoneTrafficIds.add(it.id) }
+                            if (newWarnings.isNotEmpty()) {
+                                val first = newWarnings.first()
+                                val roadPrefix = if (first.roadId.isNotBlank() && first.roadId != "Strecke") {
+                                    "auf ${first.roadId}"
+                                } else "voraus"
+                                val delayMin = (first.delaySeconds ?: 0) / 60
+                                val msg = when {
+                                    delayMin >= 2 -> "Achtung $roadPrefix: Stau mit $delayMin Minuten Verzögerung"
+                                    first.type == com.example.nagivator.domain.model.TrafficIncidentType.ROADWORK ->
+                                        "Achtung $roadPrefix: Baustelle voraus"
+                                    else -> "Achtung $roadPrefix: ${first.title.ifBlank { "Verkehrsmeldung voraus" }}"
+                                }
+                                voiceGuidance.setMuted(_uiState.value.isMuted)
+                                voiceGuidance.speak(msg)
+                            }
+                        }
+                    }
+                }
+                delay(180_000L) // poll every 3 minutes
+            }
+        }
+    }
+
+    private suspend fun handlePhoneClosureReroute(
+        closure: com.example.nagivator.domain.model.TrafficIncident,
+        currentRoute: RouteResult
+    ) {
+        val start = _uiState.value.currentLocation ?: currentRoute.geometryPoints.firstOrNull() ?: return
+        val dest = currentRoute.waypoints.lastOrNull() ?: currentRoute.geometryPoints.lastOrNull() ?: return
+        val roadLabel = if (closure.roadId.isNotBlank() && closure.roadId != "Strecke") "auf ${closure.roadId}" else ""
+        phoneDeviationTracker.markForcedClosureReroute()
+        voiceGuidance.setMuted(_uiState.value.isMuted)
+        voiceGuidance.speak("Sperrung $roadLabel voraus. Berechne Ausweichroute.".replace("  ", " "))
+
+        val remainingWaypoints = if (currentRoute.waypoints.size >= 2) {
+            listOf(start) + currentRoute.waypoints.drop(1)
+        } else {
+            listOf(start, dest)
+        }
+        val carPref = userSettingsRepository.settings.value.carSpeed
+        val detour = routingRepository.getAlternativeRouteAvoiding(
+            waypoints = remainingWaypoints,
+            blockedPoint = LocationPoint(closure.latitude, closure.longitude),
+            mode = TravelMode.CAR,
+            carSpeedPref = carPref
+        ).getOrNull()
+
+        if (detour != null &&
+            com.example.nagivator.data.repository.TrafficRepository.isPlausibleClosureDetour(
+                detour.totalDistanceMeters,
+                currentRoute.totalDistanceMeters
+            )
+        ) {
+            NavigationStateHolder.updateRoute(detour)
+            phoneGuidanceEngine.reset()
+            _uiState.update {
+                it.copy(
+                    activeRoute = detour,
+                    currentRouteStepIndex = 0
+                )
+            }
         }
     }
 
@@ -958,6 +1052,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopNavigation() {
+        phoneTrafficJob?.cancel()
+        phoneTrafficJob = null
+        announcedPhoneTrafficIds.clear()
+        phoneOffRouteDetector.reset()
+        NavigationStateHolder.updateTrafficIncidents(emptyList())
         val currentState = _uiState.value
         val activeRoute = currentState.activeRoute
         val currentLoc = currentState.currentLocation ?: NavigationStateHolder.currentLocation.value

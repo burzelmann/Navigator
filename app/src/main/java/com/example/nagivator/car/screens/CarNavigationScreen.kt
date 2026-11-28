@@ -60,8 +60,7 @@ class CarNavigationScreen(
     private var trafficJob: Job? = null
     private var isRecalculating = false
     private val guidanceEngine = TurnGuidanceEngine()
-    private var offRouteStrikeCount = 0
-    private var lastRecalculateMs = 0L
+    private val offRouteDetector = com.example.nagivator.domain.OffRouteDetector()
     private var hasArrived = false
     private val announcedIncidentIds = mutableSetOf<String>()
 
@@ -152,12 +151,19 @@ class CarNavigationScreen(
         val newWarnings = incidents.filter { announcedIncidentIds.add(it.id) }
         if (newWarnings.isNotEmpty()) {
             val first = newWarnings.first()
+            val roadPrefix = if (first.roadId.isNotBlank() && first.roadId != "Strecke") {
+                "auf ${first.roadId}"
+            } else {
+                "voraus"
+            }
             val roadworksCount = newWarnings.count { it.type == TrafficIncidentType.ROADWORK }
+            val delayMin = (first.delaySeconds ?: 0) / 60
             val msg = when {
-                roadworksCount > 1 -> "Achtung auf ${first.roadId}: $roadworksCount Baustellen voraus"
-                newWarnings.size > 1 -> "Achtung auf ${first.roadId}: ${newWarnings.size} Verkehrsmeldungen voraus"
-                first.type == TrafficIncidentType.ROADWORK -> "Achtung auf ${first.roadId}: Baustelle voraus"
-                else -> "Achtung auf ${first.roadId}: Verkehrsmeldung voraus"
+                delayMin >= 2 -> "Achtung $roadPrefix: Stau mit $delayMin Minuten Verzögerung"
+                roadworksCount > 1 -> "Achtung $roadPrefix: $roadworksCount Baustellen voraus"
+                newWarnings.size > 1 -> "Achtung $roadPrefix: ${newWarnings.size} Verkehrsmeldungen voraus"
+                first.type == TrafficIncidentType.ROADWORK -> "Achtung $roadPrefix: Baustelle voraus"
+                else -> "Achtung $roadPrefix: ${first.title.ifBlank { "Verkehrsmeldung voraus" }}"
             }
             voiceGuidance.speak(msg)
             CarToast.makeText(carContext, msg, CarToast.LENGTH_LONG).show()
@@ -179,13 +185,22 @@ class CarNavigationScreen(
 
         if (isRecalculating) return
         isRecalculating = true
+        val remainingWaypoints = if (currentRoute.waypoints.size >= 2) {
+            listOf(start) + currentRoute.waypoints.drop(1)
+        } else {
+            listOf(start, dest)
+        }
         try {
             val result = routingRepository.getAlternativeRouteAvoiding(
-                waypoints = listOf(start, dest),
+                waypoints = remainingWaypoints,
                 blockedPoint = LocationPoint(closure.latitude, closure.longitude),
                 mode = TravelMode.CAR
             )
             result.onSuccess { newRoute ->
+                if (!TrafficRepository.isPlausibleClosureDetour(newRoute.totalDistanceMeters, currentRoute.totalDistanceMeters)) {
+                    CarToast.makeText(carContext, "Sperrung voraus – keine sinnvolle Umfahrung gefunden", CarToast.LENGTH_LONG).show()
+                    return@onSuccess
+                }
                 NavigationStateHolder.updateRoute(newRoute)
                 NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
                 surfaceRenderer.updateRoute(newRoute)
@@ -208,19 +223,14 @@ class CarNavigationScreen(
             deviationTracker.recordLocation(loc)
         }
 
-        // 1. Off-Route Detection (segment-based + 3-strike hysteresis) & Trailing Polyline Trimming
+        // 1. Fast Off-Route Detection (heading + lateral + severe tiers) & Trailing Polyline Trimming
         if (route.geometryPoints.isNotEmpty() && !hasArrived) {
-            val (minDist, closestIdx) = CarNavigationHelper.distanceToPolyline(loc, route.geometryPoints)
-            if (minDist > OFF_ROUTE_THRESHOLD_METERS) {
-                offRouteStrikeCount++
-                val cooldownElapsed = System.currentTimeMillis() - lastRecalculateMs >= RECALCULATE_COOLDOWN_MS
-                if (offRouteStrikeCount >= OFF_ROUTE_STRIKES_REQUIRED && !isRecalculating && cooldownElapsed) {
-                    offRouteStrikeCount = 0
-                    recalculateRouteOffRoute(loc, route)
-                    return
-                }
-            } else {
-                offRouteStrikeCount = 0
+            val eval = offRouteDetector.evaluate(loc, route.geometryPoints, TravelMode.CAR)
+            if (eval.shouldReroute && !isRecalculating) {
+                recalculateRouteOffRoute(loc, route)
+                return
+            } else if (!eval.isOffRoute) {
+                val closestIdx = eval.closestSegmentIndex
                 if (closestIdx > 0 && closestIdx < route.geometryPoints.size - 1) {
                     val trimmedPoints = route.geometryPoints.subList(closestIdx, route.geometryPoints.size)
                     if (trimmedPoints.size >= 2 && trimmedPoints.size != route.geometryPoints.size) {
@@ -321,7 +331,9 @@ class CarNavigationScreen(
     private fun recalculateRouteOffRoute(currentLoc: LocationPoint, currentRoute: RouteResult) {
         if (currentRoute.waypoints.isEmpty()) return
         isRecalculating = true
-        lastRecalculateMs = System.currentTimeMillis()
+        offRouteDetector.markRecalculateStarted()
+        // Immediate silent visual loading indicator in the Android Auto navigation banner
+        invalidate()
 
         lifecycleScope.launch {
             try {
@@ -342,10 +354,10 @@ class CarNavigationScreen(
                     NavigationStateHolder.updateStepIndex(CarNavigationHelper.initialStepIndex(newRoute.steps))
                     surfaceRenderer.updateRoute(newRoute)
                     guidanceEngine.reset()
-                    invalidate()
                 }
             } finally {
                 isRecalculating = false
+                invalidate()
             }
         }
     }
@@ -487,8 +499,16 @@ class CarNavigationScreen(
             )
             .build()
 
+        val navigationInfo = if (isRecalculating) {
+            RoutingInfo.Builder()
+                .setLoading(true)
+                .build()
+        } else {
+            routingInfoBuilder.build()
+        }
+
         return NavigationTemplate.Builder()
-            .setNavigationInfo(routingInfoBuilder.build())
+            .setNavigationInfo(navigationInfo)
             .setDestinationTravelEstimate(travelEstimate)
             .setActionStrip(actionStrip)
             .setBackgroundColor(CarColor.SECONDARY)
@@ -512,9 +532,6 @@ class CarNavigationScreen(
     }
 
     companion object {
-        private const val OFF_ROUTE_THRESHOLD_METERS = 60f
-        private const val OFF_ROUTE_STRIKES_REQUIRED = 3
-        private const val RECALCULATE_COOLDOWN_MS = 10_000L
         private const val ARRIVAL_THRESHOLD_METERS = 35f
         private const val TRAFFIC_POLL_INTERVAL_MS = 180_000L
     }
