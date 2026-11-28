@@ -68,6 +68,10 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
         userSettingsRepository.setLearnPreferredRoutes(enabled)
     }
 
+    fun setOfflineModeEnabled(enabled: Boolean) {
+        userSettingsRepository.setOfflineModeEnabled(enabled)
+    }
+
     fun deleteLearnedRoute(id: Long) {
         viewModelScope.launch {
             learnedRouteRepository.deleteById(id)

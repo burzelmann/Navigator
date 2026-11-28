@@ -1,3 +1,3 @@
-• Schlüsselfreie Live-Verkehrsdaten (DE & NL): Neu integriert sind Verkehr.NRW / Mobilithek (Echtzeit-Staus mit Verlustzeit, Sperrungen & Baustellen auch auf Bundes-, Landes- und Stadtstraßen) sowie NDW Niederlande (DATEX II v3) – komplett ohne Login.
-• Deutlich schnelleres, stilles Off-Route-Re-Routing (kurs- & distanzbasiert in ~2 s) mit sofortigem Lade-Indikator.
-• Verkehrs-Polling, 40-m-Sperrungsfilter, Plausibilitäts-Guard & Zwischenziel-Erhalt jetzt auf Smartphone & Android Auto.
+• Globaler Online-/Offline-Schalter (Profil-Tab & Android Auto Optionen): Schaltet die App auf Wunsch vollständig offline – MapLibre, Suche, Routing, Verkehr und Tempolimit-Abfragen bauen keinerlei Internetverbindungen mehr auf.
+• Im Offline-Modus werden ohne Wartezeit ausschließlich heruntergeladene Karten, lokale Suchindizes und BRouter-Routing-Kacheln (.rd5) genutzt.
+• Dezentes Offline-Badge auf der Karte sowie Hinweis-Banner mit 1-Tap-Online-Schalter im Offline-Center.

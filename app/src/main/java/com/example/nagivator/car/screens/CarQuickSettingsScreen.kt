@@ -183,9 +183,21 @@ class CarQuickSettingsScreen(
         val showRoadSignals = settings.showRoadSignals
         val isHeadingUp = settings.carMapPerspective == MapPerspective.HEADING_UP
         val voiceEnabled = !settings.voiceMuted
+        val offlineMode = settings.offlineModeEnabled
         val carSpeed = settings.carSpeed
 
         val toggleRows = listOf(
+            Row.Builder()
+                .setTitle("Offline-Modus")
+                .addText(if (offlineMode) "Aktiv – nur heruntergeladene Karten & Routing" else "Aus – Online-Karten, Suche & Verkehr aktiv")
+                .setToggle(
+                    Toggle.Builder { isChecked ->
+                        userSettingsRepository.setOfflineModeEnabled(isChecked)
+                        surfaceRenderer.requestRender()
+                        invalidate()
+                    }.setChecked(offlineMode).build()
+                )
+                .build(),
             Row.Builder()
                 .setTitle("Sprachausgabe")
                 .addText(if (voiceEnabled) "Aktiv (synchron mit Smartphone)" else "Stumm (synchron mit Smartphone)")

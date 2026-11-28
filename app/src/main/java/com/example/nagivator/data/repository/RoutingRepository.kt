@@ -98,7 +98,8 @@ class RoutingRepository {
                 throw IllegalArgumentException("Mindestens 2 Wegpunkte erforderlich")
             }
 
-            if (!debugSimulateOfflineRouting) {
+            val offlineRouting = debugSimulateOfflineRouting || UserSettingsRepository.isOfflineModeEnabled
+            if (!offlineRouting) {
                 // 1. For FOOT mode, try BRouter Hiking engine first
                 if (mode == TravelMode.FOOT) {
                     val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
@@ -156,7 +157,8 @@ class RoutingRepository {
 
             val results = mutableListOf<RouteResult>()
 
-            if (!debugSimulateOfflineRouting) {
+            val offlineRouting = debugSimulateOfflineRouting || UserSettingsRepository.isOfflineModeEnabled
+            if (!offlineRouting) {
                 // 1. For FOOT mode, prefer BRouter outdoor trail route as primary
                 if (mode == TravelMode.FOOT) {
                     val brouterResult = getBRouterRoute(waypoints, footSpeedPref)
@@ -191,9 +193,9 @@ class RoutingRepository {
                 }
             }
 
-            // 3. Optional learned CAR preference (only when opt-in & confirmed >= 3x)
+            // 3. Optional learned CAR preference (only when online, opt-in & confirmed >= 3x)
             var preferredRoute: RouteResult? = null
-            if (mode == TravelMode.CAR && learnedPreference != null && waypoints.size == 2) {
+            if (!offlineRouting && mode == TravelMode.CAR && learnedPreference != null && waypoints.size == 2) {
                 try {
                     val viaWaypoints = buildList {
                         add(waypoints.first())
@@ -269,6 +271,9 @@ class RoutingRepository {
     ): Result<RouteResult> = withContext(Dispatchers.IO) {
         runCatching {
             if (waypoints.size < 2) throw IllegalArgumentException("Mindestens 2 Wegpunkte erforderlich")
+            if (debugSimulateOfflineRouting || UserSettingsRepository.isOfflineModeEnabled) {
+                throw IOException("Offline-Modus aktiv")
+            }
             val osrmProfile = if (mode == TravelMode.FOOT) "foot" else "driving"
             val coordsStr = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
 
@@ -601,8 +606,8 @@ class RoutingRepository {
     ): Result<List<LocationPoint>> = withContext(Dispatchers.IO) {
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
-            if (debugSimulateOfflineSearch) {
-                throw IOException("Simulated offline mode")
+            if (debugSimulateOfflineSearch || UserSettingsRepository.isOfflineModeEnabled) {
+                throw IOException("Offline-Modus aktiv")
             }
 
             // 1. Primary: Photon (fast, location-biased)
@@ -672,6 +677,14 @@ class RoutingRepository {
 
     suspend fun reverseGeocode(lat: Double, lon: Double): Result<LocationPoint> = withContext(Dispatchers.IO) {
         runCatching {
+            if (debugSimulateOfflineSearch || UserSettingsRepository.isOfflineModeEnabled) {
+                return@runCatching LocationPoint(
+                    latitude = lat,
+                    longitude = lon,
+                    name = "Markierter Ort (%.3f, %.3f)".format(lat, lon),
+                    address = "Offline-Modus"
+                )
+            }
             try {
                 val response = geocodingApi.reverseGeocode(lat = lat, lon = lon)
                 val feature = response.features.firstOrNull()

@@ -81,8 +81,10 @@ class RoadContextRepository {
                 Double.MAX_VALUE
             }
 
-            val needsFetch = forceRefresh || area == null ||
-                distFromCenter > 350.0 || (now - area.fetchedAtMs) > 90_000L
+            val needsFetch = !UserSettingsRepository.isOfflineModeEnabled && (
+                forceRefresh || area == null ||
+                    distFromCenter > 350.0 || (now - area.fetchedAtMs) > 90_000L
+                )
 
             if (needsFetch) {
                 val bbox = buildBbox(lat, lon)

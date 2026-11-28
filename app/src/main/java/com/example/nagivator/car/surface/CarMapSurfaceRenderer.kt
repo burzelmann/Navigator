@@ -124,6 +124,7 @@ class CarMapSurfaceRenderer(private val carContext: CarContext) : SurfaceCallbac
 
             try {
                 MapLibre.getInstance(carContext.applicationContext)
+                MapLibre.setConnected(!com.example.nagivator.data.repository.UserSettingsRepository.isOfflineModeEnabled)
                 val dm = carContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
                 val vd = dm.createVirtualDisplay(
                     "NagivatorCarMap",

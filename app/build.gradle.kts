@@ -26,7 +26,7 @@ android {
         applicationId = "com.verhuelsdonk.navigator"
         minSdk = 37
         targetSdk = 37
-        versionCode = 27
+        versionCode = 28
         versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

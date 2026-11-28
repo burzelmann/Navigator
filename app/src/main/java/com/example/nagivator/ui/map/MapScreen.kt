@@ -89,6 +89,7 @@ fun MapScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val userSettings by viewModel.userSettingsRepository.settings.collectAsState()
     val pois by viewModel.pois.collectAsState()
     val allOfflineRegions by viewModel.allOfflineRegions.collectAsState()
     val azimuthDegrees by viewModel.azimuthDegrees.collectAsState()
@@ -286,6 +287,27 @@ fun MapScreen(
                             unfocusedIndicatorColor = Color.Transparent
                         )
                     )
+                }
+
+                // Offline Mode Indicator Badge
+                if (userSettings.offlineModeEnabled && !isSearchActive) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shadowElevation = 4.dp,
+                        modifier = Modifier.clickable {
+                            showOfflineManagerDialog = true
+                            viewModel.refreshOfflineCacheSize(context)
+                        }
+                    ) {
+                        Text(
+                            text = "Offline-Modus aktiv • Nur lokale Karten & Routing",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
                 }
 
                 // Search Results Dropdown

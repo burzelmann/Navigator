@@ -90,6 +90,8 @@ fun OfflineManagerScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val userSettings by viewModel.userSettingsRepository.settings.collectAsState()
+    val isOfflineMode = userSettings.offlineModeEnabled
     val allOfflineRegions by viewModel.allOfflineRegions.collectAsState()
     val searchCounts by viewModel.offlineSearchCountsByRegion.collectAsState()
 
@@ -152,6 +154,44 @@ fun OfflineManagerScreen(
                 )
             }
 
+            // 1b. Offline-Mode Banner (blocks downloads until switched online)
+            if (isOfflineMode) {
+                item(key = "offline_mode_banner") {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = "Offline-Modus ist aktiv",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    text = "Für neue Downloads bitte kurz auf Online umschalten.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = { viewModel.userSettingsRepository.setOfflineModeEnabled(false) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Online")
+                            }
+                        }
+                    }
+                }
+            }
+
             // 2. Active Map Download / Status Banner
             if (uiState.isDownloadingOfflineMap || uiState.downloadStatusMessage != null || uiState.routingDownloadStatus != null) {
                 item(key = "status_banner") {
@@ -195,7 +235,7 @@ fun OfflineManagerScreen(
                     if (mapController != null) {
                         Button(
                             onClick = { viewModel.startOfflineMapDownload(context, mapController) },
-                            enabled = !uiState.isDownloadingOfflineMap,
+                            enabled = !uiState.isDownloadingOfflineMap && !isOfflineMode,
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -296,7 +336,7 @@ fun OfflineManagerScreen(
                         installedInfo = installed,
                         coveredRegions = covered,
                         isDownloadingThis = uiState.downloadingRoutingSegmentName == currentAreaSegment,
-                        isAnyDownloadActive = uiState.isDownloadingRoutingSegment,
+                        isAnyDownloadActive = uiState.isDownloadingRoutingSegment || isOfflineMode,
                         downloadProgress = uiState.routingDownloadProgress,
                         downloadStatus = uiState.routingDownloadStatus,
                         highlighted = true,
@@ -359,7 +399,7 @@ fun OfflineManagerScreen(
                                 installedInfo = installed,
                                 coveredRegions = covered,
                                 isDownloadingThis = uiState.downloadingRoutingSegmentName == entry.fileName,
-                                isAnyDownloadActive = uiState.isDownloadingRoutingSegment,
+                                isAnyDownloadActive = uiState.isDownloadingRoutingSegment || isOfflineMode,
                                 downloadProgress = uiState.routingDownloadProgress,
                                 downloadStatus = uiState.routingDownloadStatus,
                                 highlighted = false,

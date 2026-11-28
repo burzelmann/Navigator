@@ -48,6 +48,7 @@ data class UserSettings(
     val voiceName: String? = null,
     val voiceSpeechRate: VoiceSpeechRate = VoiceSpeechRate.NORMAL,
     val learnPreferredRoutes: Boolean = false,
+    val offlineModeEnabled: Boolean = false,
     val parkedCar: ParkedCarLocation? = null
 )
 
@@ -60,12 +61,16 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     init {
         prefs.registerOnSharedPreferenceChangeListener(this)
         NavigationStateHolder.setMuted(_settings.value.voiceMuted)
+        isOfflineModeEnabled = _settings.value.offlineModeEnabled
+        applyMapLibreConnectivity(!_settings.value.offlineModeEnabled)
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         val loaded = loadSettings()
         _settings.value = loaded
         NavigationStateHolder.setMuted(loaded.voiceMuted)
+        isOfflineModeEnabled = loaded.offlineModeEnabled
+        applyMapLibreConnectivity(!loaded.offlineModeEnabled)
     }
 
     private fun loadSettings(): UserSettings {
@@ -80,6 +85,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         val voiceName = prefs.getString("voice_name", null)?.takeIf { it.isNotBlank() }
         val voiceRateName = prefs.getString("voice_speech_rate", VoiceSpeechRate.NORMAL.name)
         val learnPreferredRoutes = prefs.getBoolean("learn_preferred_routes", false)
+        val offlineModeEnabled = prefs.getBoolean("offline_mode_enabled", false)
         val parkedCar = if (prefs.contains("parked_car_lat") && prefs.contains("parked_car_lon")) {
             ParkedCarLocation(
                 latitude = prefs.getFloat("parked_car_lat", 0f).toDouble(),
@@ -137,6 +143,7 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
             voiceName = voiceName,
             voiceSpeechRate = voiceRate,
             learnPreferredRoutes = learnPreferredRoutes,
+            offlineModeEnabled = offlineModeEnabled,
             parkedCar = parkedCar
         )
     }
@@ -200,6 +207,13 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
         _settings.update { it.copy(learnPreferredRoutes = enabled) }
     }
 
+    fun setOfflineModeEnabled(enabled: Boolean) {
+        isOfflineModeEnabled = enabled
+        prefs.edit().putBoolean("offline_mode_enabled", enabled).apply()
+        applyMapLibreConnectivity(!enabled)
+        _settings.update { it.copy(offlineModeEnabled = enabled) }
+    }
+
     fun saveParkedCar(
         latitude: Double,
         longitude: Double,
@@ -230,6 +244,15 @@ class UserSettingsRepository private constructor(context: Context) : SharedPrefe
     companion object {
         @Volatile
         private var INSTANCE: UserSettingsRepository? = null
+
+        @Volatile
+        var isOfflineModeEnabled: Boolean = false
+
+        fun applyMapLibreConnectivity(connected: Boolean) {
+            runCatching {
+                org.maplibre.android.MapLibre.setConnected(connected)
+            }
+        }
 
         fun getInstance(context: Context): UserSettingsRepository {
             return INSTANCE ?: synchronized(this) {

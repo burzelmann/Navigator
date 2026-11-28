@@ -46,7 +46,8 @@
   - Exakte Auswertung von Gesamtaufstieg und Gesamtabstieg (`↗ 120m  ↘ 85m`).
   - Interaktives, kompaktes Höhenprofil-Diagramm im Routenplaner.
 
-- 📥 **Umfassendes Offline-Center (`OfflineManagerScreen`):**
+- 📥 **Umfassendes Offline-Center (`OfflineManagerScreen`) & Globaler Offline-Modus:**
+  - **Online-/Offline-Schalter (Profil & Android Auto Optionen):** Schaltet die gesamte App auf Wunsch komplett offline (`MapLibre.setConnected(false)`, keine Online-Suche, kein Online-Routing, kein Verkehrs-/OSM-Polling) – es werden ausschließlich lokal heruntergeladene Karten, Suchindizes und BRouter-Routing-Kacheln genutzt.
   - **Zentrales Vollbild-Offline-Center:** Erreichbar direkt über die Karte **und** über den **Profil-Tab**, mit gemeinsamer Speicher-Übersicht (*Karten + Routing + Suchindex + Cache*) und zwei klaren Tabs (*Regionen* & *Routing*).
   - **Regionen-Download & gebündelter Status:** Gezielter Kachel-Download für sichtbare Ausschnitte inkl. Datengrößen-Schätzung, 10s-ETA, automatischer Regionen-Benennung und 3 Live-Status-Badges pro Region (*Karte bereit*, *Offline-Ziele im Suchindex*, *Offline-Routing bereit/fehlt*).
   - **Lokaler Offline-Suchindex (`OfflineSearchIndexRepository`):** Lädt beim Regionen-Download (oder 1-Tap-Nachindizierung) automatisch Orte, benannte Straßen und wichtige POIs in Room/SQLite — blitzschnelle Offline-Suche auf Smartphone & Android Auto.

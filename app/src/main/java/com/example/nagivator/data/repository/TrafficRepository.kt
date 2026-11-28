@@ -71,6 +71,9 @@ class TrafficRepository {
      */
     suspend fun fetchIncidentsOnRoute(route: RouteResult): List<TrafficIncident> =
         withContext(Dispatchers.IO) {
+            if (UserSettingsRepository.isOfflineModeEnabled) {
+                return@withContext emptyList()
+            }
             val allIncidents = mutableListOf<TrafficIncident>()
 
             // 1. Autobahn GmbH (Bundesautobahnen)

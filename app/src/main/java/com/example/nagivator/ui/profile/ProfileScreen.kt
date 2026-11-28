@@ -622,6 +622,51 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Verbindungsmodus (Online / Offline)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "Verbindungsmodus",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (settings.offlineModeEnabled) {
+                        "Vollständig offline: Nur heruntergeladene Karten, lokale Suche & BRouter-Routing-Kacheln werden genutzt."
+                    } else {
+                        "Online: Live-Karten, OSRM-Routing, Online-Suche & Live-Verkehrsdaten aktiv."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = !settings.offlineModeEnabled,
+                        onClick = { viewModel.setOfflineModeEnabled(false) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                    ) {
+                        Text("Online")
+                    }
+                    SegmentedButton(
+                        selected = settings.offlineModeEnabled,
+                        onClick = { viewModel.setOfflineModeEnabled(true) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    ) {
+                        Text("Offline")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Offline-Karten & Routing Einstiegskarte
         Card(
             modifier = Modifier.fillMaxWidth(),

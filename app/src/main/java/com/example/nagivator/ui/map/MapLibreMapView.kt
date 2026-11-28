@@ -143,6 +143,7 @@ fun MapLibreMapView(
 
     remember {
         MapLibre.getInstance(context.applicationContext)
+        MapLibre.setConnected(!com.example.nagivator.data.repository.UserSettingsRepository.isOfflineModeEnabled)
     }
 
     val userSettings by remember {
